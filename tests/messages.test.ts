@@ -19,6 +19,7 @@ test('large role pools are unique, short and preserve every original phrase verb
   };
   for (const role of ['reviewer', 'recipient'] as const) {
     assert.ok(messages[role].length >= 300);
+    assert.ok(messages[role].filter(phrase => /пизд|бляд|оху|наеб/i.test(phrase)).length >= 6, `both profiles keep their pepper: ${role}`);
     const originalHash = createHash('sha256').update(JSON.stringify(messages[role].slice(0, 26))).digest('hex');
     assert.equal(originalHash, originals[role]);
     for (const phrase of messages[role]) { assert.equal(phrase, phrase.trim()); assert.ok(phrase.length > 0 && phrase.length <= 85, phrase); }

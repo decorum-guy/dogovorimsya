@@ -89,6 +89,31 @@ export function openDatabase(directory: string) {
     );
     CREATE INDEX IF NOT EXISTS revisions_review ON revisions(review_id);
     CREATE INDEX IF NOT EXISTS comments_review ON comments(review_id);
+    CREATE TABLE IF NOT EXISTS notification_preferences (
+      user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      enabled INTEGER NOT NULL,
+      events TEXT NOT NULL,
+      muted_until INTEGER,
+      silent INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      endpoint TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      session_hash TEXT NOT NULL REFERENCES sessions(token_hash) ON DELETE CASCADE,
+      subscription TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS push_outbox (
+      id TEXT PRIMARY KEY,
+      endpoint TEXT NOT NULL REFERENCES push_subscriptions(endpoint) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      review_id INTEGER REFERENCES reviews(id) ON DELETE CASCADE,
+      created_at INTEGER NOT NULL,
+      next_attempt INTEGER NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS push_outbox_due ON push_outbox(next_attempt);
   `);
   transaction(db, () => {
     const columns = db.prepare('PRAGMA table_info(users)').all();
@@ -101,7 +126,7 @@ export function openDatabase(directory: string) {
       ) WHERE registered_at IS NULL AND EXISTS (
         SELECT 1 FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
       );
-      PRAGMA user_version = 3;
+      PRAGMA user_version = 4;
     `);
   });
   return db;

@@ -27,7 +27,7 @@ export function Admin({ data }: { data: Bootstrap }) {
     try { await api(`/api/admin/users/${userId}/password`, json('POST', { password: fields.get('password') })); form.reset(); setMessage('Пароль изменён. Пользователь сможет войти с новым паролем или своим действующим кодом.'); }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  return <section className="admin-page profiles-page"><p className="eyebrow">КЛЮЧИ ОТ ВАШЕЙ ИСТОРИИ</p><h1>Только свои.</h1><p className="page-subtitle">Приглашения, восстановление и немного заботы о доступе.</p>
+  return <section className="admin-page profiles-page"><p className="eyebrow">ФЕЙС-КОНТРОЛЬ ВАШЕГО ДУРДОМА</p><h1>Свои? Проходите, котики.</h1><p className="page-subtitle">Два места в космосе. Ни одного для случайного чёрта.</p>
     <div className="access-panel"><div className="access-panel-heading"><span className="stat-icon lilac"><KeyRound size={21}/></span><div><h2>Код доступа</h2><p>Один код — один аккаунт. После регистрации он подходит для восстановления.</p></div></div>
       <label>Для кого?<select value={target} onChange={e => { setTarget(e.target.value); setIssued(null); setCopied(''); }} disabled={busy}>{!data.users.some(u => u.role === 'recipient') && <option value="invite">Приглашение для неё — новый аккаунт</option>}{data.users.map(user => <option value={user.id} key={user.id}>{user.name} — восстановление доступа</option>)}</select></label>
       <p className="access-help">Новый код заменит предыдущий код этого аккаунта. Приглашение можно активировать в течение 30 дней; после регистрации код действует до отзыва.</p><button className="primary-button" disabled={busy} onClick={issue}>{busy ? <Spinner/> : <Plus size={16}/>}Выдать код</button>

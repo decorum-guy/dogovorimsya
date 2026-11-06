@@ -13,10 +13,11 @@ import { createSession, sessionCookie, sessionDuration, setSessionCookie, tokenH
 import { installAccessRoutes } from './access.js';
 import { HttpError } from './errors.js';
 import { getCoupleStatistics } from './statistics.js';
+import { createNotifications, type PushSender } from './notifications.js';
 import type { User } from '../shared/types.js';
 
 declare global { namespace Express { interface Request { user?: User } } }
-export interface AppOptions { dataDir: string; origin: string; secure: boolean; demo: boolean; trustProxy?: boolean }
+export interface AppOptions { dataDir: string; origin: string; secure: boolean; demo: boolean; trustProxy?: boolean; pushSender?: PushSender }
 const idSchema = z.string().regex(/^\d+$/).transform(Number).refine(Number.isSafeInteger);
 const mediaId = z.string().uuid();
 const reviewSchema = z.object({
@@ -36,6 +37,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 
 export function createApp(options: AppOptions) {
   if (options.demo && process.env.NODE_ENV === 'production') throw new Error('Demo mode is not allowed in production');
   const db = openDatabase(options.dataDir);
+  const notifications = createNotifications(db, { ...options, send: options.pushSender });
   const app = express();
   app.disable('x-powered-by');
   if (options.trustProxy) app.set('trust proxy', 1);
@@ -117,6 +119,7 @@ export function createApp(options: AppOptions) {
     res.json({ ok: true });
   });
   app.get('/api/bootstrap', authenticated, (req, res) => res.json({ user: req.user, users: getUsers(db), reviews: getReviews(db, req.user!.id), statistics: getCoupleStatistics(db), demo: options.demo }));
+  notifications.install(app, authenticated);
   installAccessRoutes(app, db, options.secure, authenticated, (req, _res, next) => {
     if (req.user?.role !== 'reviewer') throw new HttpError(403, 'Коды доступа может выдавать только администратор.');
     next();
@@ -130,6 +133,7 @@ export function createApp(options: AppOptions) {
         .run(req.user!.id, data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
       const id = Number(result.lastInsertRowid);
       insertRevision(id, req.user!.id, data, now);
+      notifications.enqueue('review_created', req.user!.id, id);
       return id;
     });
     res.status(201).json({ id });
@@ -146,6 +150,7 @@ export function createApp(options: AppOptions) {
       db.prepare('UPDATE reviews SET rating = ?, title = ?, body = ?, event_date = ?, photo_ids = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
         .run(data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, Number(row.id));
       insertRevision(Number(row.id), req.user!.id, data, now);
+      if (row.rating !== data.rating) notifications.enqueue('rating_changed', req.user!.id, Number(row.id));
     });
     res.json({ ok: true });
   });
@@ -153,7 +158,10 @@ export function createApp(options: AppOptions) {
     const row = findReview(req.params.id);
     const { body } = commentSchema.parse(req.body);
     const now = new Date().toISOString();
-    db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(Number(row.id), req.user!.id, body, now, now);
+    transaction(db, () => {
+      db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(Number(row.id), req.user!.id, body, now, now);
+      notifications.enqueue('comment', req.user!.id, Number(row.id));
+    });
     res.status(201).json({ ok: true });
   });
   app.patch('/api/comments/:id', authenticated, (req, res) => {
@@ -172,15 +180,22 @@ export function createApp(options: AppOptions) {
     transaction(db, () => {
       const exists = db.prepare('SELECT 1 FROM reactions WHERE review_id = ? AND user_id = ? AND emoji = ?').get(id, userId, emoji);
       if (exists) db.prepare('DELETE FROM reactions WHERE review_id = ? AND user_id = ? AND emoji = ?').run(id, userId, emoji);
-      else db.prepare('INSERT INTO reactions VALUES (?, ?, ?)').run(id, userId, emoji);
+      else {
+        db.prepare('INSERT INTO reactions VALUES (?, ?, ?)').run(id, userId, emoji);
+        notifications.enqueue('reaction', userId, id);
+      }
     });
     res.json({ ok: true });
   });
   app.put('/api/reviews/:id/favorite', authenticated, (req, res) => {
     const row = findReview(req.params.id);
     const { favorite } = z.object({ favorite: z.boolean() }).parse(req.body);
-    if (favorite) db.prepare('INSERT OR IGNORE INTO favorites VALUES (?, ?)').run(Number(row.id), req.user!.id);
-    else db.prepare('DELETE FROM favorites WHERE review_id = ? AND user_id = ?').run(Number(row.id), req.user!.id);
+    transaction(db, () => {
+      if (favorite) {
+        const result = db.prepare('INSERT OR IGNORE INTO favorites VALUES (?, ?)').run(Number(row.id), req.user!.id);
+        if (result.changes) notifications.enqueue('favorite', req.user!.id, Number(row.id));
+      } else db.prepare('DELETE FROM favorites WHERE review_id = ? AND user_id = ?').run(Number(row.id), req.user!.id);
+    });
     res.json({ ok: true });
   });
   app.patch('/api/profile', authenticated, (req, res) => {
@@ -241,6 +256,7 @@ export function createApp(options: AppOptions) {
       const message = _req.path === '/api/register' ? 'Проверь имя, код и логин латиницей. Пароль — от 12 символов.'
         : _req.path === '/api/recover' || _req.path.endsWith('/password') ? 'Проверь код или текущий пароль. Новый пароль — от 12 символов.'
         : _req.path === '/api/login' ? 'Проверь логин и пароль.'
+        : _req.path.startsWith('/api/notifications') ? 'Проверь настройки уведомлений. Устройство можно переподключить кнопкой ниже.'
         : 'Проверь заполненные поля: текст, дату, оценку и фотографии.';
       return res.status(400).json({ error: message });
     }
@@ -250,5 +266,5 @@ export function createApp(options: AppOptions) {
     console.error('Request failed:', error instanceof Error ? error.name : 'Unknown error');
     res.status(500).json({ error: 'Что-то пошло не так. Попробуй ещё раз.' });
   });
-  return { app, db };
+  return { app, db, notifications };
 }
