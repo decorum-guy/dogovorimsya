@@ -83,6 +83,21 @@ test('private push: event routing, preferences, persistence, retries and session
       assert.deepEqual(await (await request('/api/notifications/device', 'POST', { endpoint: endpointB })).json(), { connected: false });
       assert.deepEqual(await (await request('/api/notifications/device', 'POST', { endpoint: endpointB }, 'recipient')).json(), { connected: true });
     });
+    await t.test('partial preference updates from different windows preserve unrelated settings', async () => {
+      await Promise.all([
+        request('/api/notifications/preferences', 'PATCH', { silent: true }),
+        request('/api/notifications/preferences', 'PATCH', { events: { comment: false } }),
+      ]);
+      assert.equal(notifications.preferences(1).silent, true); assert.equal(notifications.preferences(1).events.comment, false);
+      assert.equal(notifications.preferences(1).events.favorite, true);
+      await updatePrefs('reviewer', {});
+    });
+    await t.test('disconnecting by session works without a local endpoint and leaves the partner connected', async () => {
+      assert.equal((await request('/api/notifications/device', 'DELETE')).status, 200);
+      assert.equal(db.prepare('SELECT 1 FROM push_subscriptions WHERE endpoint = ?').get(endpointA), undefined);
+      assert.ok(db.prepare('SELECT 1 FROM push_subscriptions WHERE endpoint = ?').get(endpointB));
+      assert.equal((await subscribe('reviewer', endpointA)).status, 201);
+    });
     await t.test('new reviews and actual rating changes notify only her, with no intimate content in the push', async () => {
       const created = await request('/api/reviews', 'POST', review); id = (await created.json()).id;
       assert.equal(created.status, 201); assert.equal(countJobs(), 1);

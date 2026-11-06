@@ -114,10 +114,20 @@ export function openDatabase(directory: string) {
       attempts INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS push_outbox_due ON push_outbox(next_attempt);
+    CREATE TABLE IF NOT EXISTS write_receipts (
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      request_key TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      response TEXT NOT NULL,
+      created_at INTEGER NOT NULL,
+      PRIMARY KEY(user_id, request_key)
+    );
   `);
   transaction(db, () => {
     const columns = db.prepare('PRAGMA table_info(users)').all();
     if (!columns.some(column => column.name === 'registered_at')) db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT');
+    const commentColumns = db.prepare('PRAGMA table_info(comments)').all();
+    if (!commentColumns.some(column => column.name === 'revision')) db.exec('ALTER TABLE comments ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
     // A claimed invitation is evidence of registration. Never substitute a review
     // date, deployment date or a later recovery-code issue date for it.
     db.exec(`
@@ -126,7 +136,7 @@ export function openDatabase(directory: string) {
       ) WHERE registered_at IS NULL AND EXISTS (
         SELECT 1 FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
       );
-      PRAGMA user_version = 4;
+      PRAGMA user_version = 5;
     `);
   });
   return db;
@@ -164,6 +174,7 @@ export function getReviews(db: DB, userId: number): Review[] {
     comments: comments.filter(c => c.review_id === r.id).map(c => ({
       id: Number(c.id), userId: Number(c.user_id), body: String(c.body),
       createdAt: String(c.created_at), updatedAt: String(c.updated_at),
+      revision: Number(c.revision),
     })),
     reactions: reactions.filter(v => v.review_id === r.id).map(v => ({ userId: Number(v.user_id), emoji: String(v.emoji) })),
     favorite: favorites.has(Number(r.id)),

@@ -2,10 +2,11 @@ import type { Express, RequestHandler } from 'express';
 import { randomUUID } from 'node:crypto';
 import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
-import { createSession, hashPassword } from './auth.js';
+import { createSession, hashPassword, requireLiveSession, sessionCookie } from './auth.js';
 import { hashAccessCode, makeAccessCode } from './codes.js';
 import { publicUser, transaction, type DB } from './db.js';
 import { HttpError } from './errors.js';
+import { loginExpression } from '../shared/account-validation.js';
 
 const password = z.string().min(12).max(256);
 const codeInput = z.string().trim().min(10).max(100);
@@ -17,7 +18,7 @@ export function installAccessRoutes(app: Express, db: DB, secure: boolean, authe
     return row;
   };
   app.post('/api/register', limiter, async (req, res) => {
-    const input = z.object({ code: codeInput, login: z.string().trim().toLowerCase().regex(/^[a-z0-9_.-]{3,40}$/), name: z.string().trim().min(1).max(50), password }).parse(req.body);
+    const input = z.object({ code: codeInput, login: z.string().trim().toLowerCase().regex(loginExpression), name: z.string().trim().min(1).max(50), password }).parse(req.body);
     findCode(input.code);
     const hash = await hashPassword(input.password);
     const user = transaction(db, () => {
@@ -88,6 +89,7 @@ export function installAccessRoutes(app: Express, db: DB, secure: boolean, authe
     const input = z.object({ password }).parse(req.body);
     const hash = await hashPassword(input.password);
     transaction(db, () => {
+      requireLiveSession(db, req.cookies[sessionCookie], req.user!.id);
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, id);
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(id);
     });

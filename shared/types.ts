@@ -24,6 +24,7 @@ export interface ReviewComment {
   body: string;
   createdAt: string;
   updatedAt: string;
+  revision: number;
 }
 export interface Review {
   id: number;

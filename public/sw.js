@@ -41,9 +41,13 @@ self.addEventListener('notificationclick', event => {
   }
   event.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async clients => {
     for (const client of clients) {
-      if (new URL(client.url).origin !== self.location.origin) continue;
-      const navigated = await client.navigate(url.href);
-      if (navigated) { await navigated.focus(); return; }
+      const current = new URL(client.url);
+      if (current.origin !== self.location.origin || current.pathname === '/design') continue;
+      // Keep open forms intact. The app opens the target after the draft closes.
+      try {
+        client.postMessage({ type: 'OPEN_REVIEW', reviewId, userId });
+        await client.focus(); return;
+      } catch { /* A background window may have closed since matchAll. */ }
     }
     await self.clients.openWindow(url.href);
   }));

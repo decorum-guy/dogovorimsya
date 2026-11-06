@@ -6,7 +6,7 @@ import { rateLimit } from 'express-rate-limit';
 import webpush from 'web-push';
 import { z } from 'zod';
 import { defaultNotificationPreferences, notificationKinds, type NotificationKind, type NotificationPreferences } from '../shared/notifications.js';
-import type { DB } from './db.js';
+import { transaction, type DB } from './db.js';
 import { sessionCookie, tokenHash } from './auth.js';
 import { HttpError } from './errors.js';
 
@@ -105,8 +105,13 @@ export function createNotifications(db: DB, options: { dataDir: string; origin: 
       available, publicKey: keys?.publicKey || null, preferences: preferences(req.user!.id),
       deviceCount: Number(db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions p JOIN sessions s ON s.token_hash = p.session_hash WHERE p.user_id = ? AND s.expires_at > ?').get(req.user!.id, Date.now())!.n),
     }));
-    app.put('/api/notifications/preferences', authenticated, (req, res) => {
-      const prefs = preferencesSchema.parse(req.body);
+    const updatePreferences: RequestHandler = (req, res) => {
+      const patch = req.method === 'PATCH'
+        ? preferencesSchema.partial().extend({ events: eventSchema.partial().optional() }).parse(req.body)
+        : preferencesSchema.parse(req.body);
+      const prefs = transaction(db, () => {
+      const current = preferences(req.user!.id);
+      const prefs = { ...current, ...patch, events: { ...current.events, ...patch.events } };
       if (prefs.mutedUntil && prefs.mutedUntil > Date.now() + 31 * 24 * hour) throw new HttpError(400, 'Паузу можно поставить максимум на месяц.');
       db.prepare(`INSERT INTO notification_preferences VALUES (?, ?, ?, ?, ?) ON CONFLICT(user_id) DO UPDATE SET
         enabled = excluded.enabled, events = excluded.events, muted_until = excluded.muted_until, silent = excluded.silent`)
@@ -115,8 +120,12 @@ export function createNotifications(db: DB, options: { dataDir: string; origin: 
       for (const kind of [...notificationKinds, 'test'] as const) {
         if (!prefs.enabled || prefs.mutedUntil && prefs.mutedUntil > Date.now() || kind !== 'test' && !prefs.events[kind]) db.prepare('DELETE FROM push_outbox WHERE user_id = ? AND kind = ?').run(req.user!.id, kind);
       }
-      res.json({ ok: true });
-    });
+      return prefs;
+      });
+      res.json({ ok: true, preferences: prefs });
+    };
+    app.put('/api/notifications/preferences', authenticated, updatePreferences);
+    app.patch('/api/notifications/preferences', authenticated, updatePreferences);
     app.post('/api/notifications/subscriptions', authenticated, limiter, (req, res) => {
       if (!available) throw new HttpError(503, 'Уведомления доступны в основном приложении по HTTPS.');
       const subscription = subscriptionSchema.parse(req.body);
@@ -138,6 +147,10 @@ export function createNotifications(db: DB, options: { dataDir: string; origin: 
       const connected = Boolean(db.prepare('SELECT 1 FROM push_subscriptions WHERE endpoint = ? AND user_id = ? AND session_hash = ?')
         .get(endpoint, req.user!.id, tokenHash(req.cookies[sessionCookie])));
       res.json({ connected });
+    });
+    app.delete('/api/notifications/device', authenticated, (req, res) => {
+      db.prepare('DELETE FROM push_subscriptions WHERE user_id = ? AND session_hash = ?').run(req.user!.id, tokenHash(req.cookies[sessionCookie]));
+      res.json({ ok: true });
     });
     app.post('/api/notifications/test', authenticated, rateLimit({ windowMs: 60_000, limit: 3, message: { error: 'Проверка уже улетела. Подожди минутку.' } }), (req, res) => {
       const prefs = preferences(req.user!.id);

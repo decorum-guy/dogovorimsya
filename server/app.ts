@@ -9,12 +9,13 @@ import { writeFile, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { openDatabase, getReviews, getUsers, publicUser, transaction, type Row } from './db.js';
-import { createSession, sessionCookie, sessionDuration, setSessionCookie, tokenHash, verifyPassword } from './auth.js';
+import { createSession, sessionCookie, sessionDuration, setSessionCookie, tokenHash, verifyPassword, requireLiveSession } from './auth.js';
 import { installAccessRoutes } from './access.js';
 import { HttpError } from './errors.js';
 import { getCoupleStatistics } from './statistics.js';
 import { createNotifications, type PushSender } from './notifications.js';
 import type { User } from '../shared/types.js';
+import { once } from './write-receipts.js';
 
 declare global { namespace Express { interface Request { user?: User } } }
 export interface AppOptions { dataDir: string; origin: string; secure: boolean; demo: boolean; trustProxy?: boolean; pushSender?: PushSender }
@@ -103,8 +104,13 @@ export function createApp(options: AppOptions) {
     const dummy = 'scrypt:000000000000000000000000000000000000000000000000:' + '00'.repeat(64);
     const matches = await verifyPassword(input.password, row ? String(row.password_hash) : dummy);
     if (!row || !matches) throw new HttpError(401, 'Логин или пароль не подошёл. Попробуем ещё раз?');
-    createSession(db, res, Number(row.id), options.secure);
-    res.json({ user: publicUser(row) });
+    const user = transaction(db, () => {
+      const current = db.prepare('SELECT * FROM users WHERE id = ?').get(Number(row.id));
+      if (!current || current.password_hash !== row.password_hash) throw new HttpError(401, 'Пароль изменился во время входа. Введи новый пароль.');
+      createSession(db, res, Number(row.id), options.secure);
+      return publicUser(current);
+    });
+    res.json({ user });
   });
   if (options.demo) app.post('/api/demo/login', (req, res) => {
     const role = z.enum(['reviewer', 'recipient']).parse(req.body.role);
@@ -128,15 +134,15 @@ export function createApp(options: AppOptions) {
     const data = reviewSchema.parse(req.body);
     checkPhotos(data.photoIds, req.user!);
     const now = new Date().toISOString();
-    const id = transaction(db, () => {
+    const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, data, () => {
       const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, photo_ids, created_at, updated_at, design_variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(req.user!.id, data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
       const id = Number(result.lastInsertRowid);
       insertRevision(id, req.user!.id, data, now);
       notifications.enqueue('review_created', req.user!.id, id);
-      return id;
-    });
-    res.status(201).json({ id });
+      return { id };
+    }));
+    res.status(201).json(result);
   });
   app.patch('/api/reviews/:id', authenticated, reviewer, (req, res) => {
     const data = reviewSchema.extend({ revision: z.number().int().positive() }).parse(req.body);
@@ -145,7 +151,8 @@ export function createApp(options: AppOptions) {
       const row = findReview(req.params.id);
       if (row.author_id !== req.user!.id) throw new HttpError(403, 'Этот отзыв может изменить только его автор.');
       if (row.revision !== data.revision) throw new HttpError(409, 'Отзыв уже изменён в другом окне. Закрой редактор и обнови ленту.');
-      if (row.rating === data.rating && row.title === data.title && row.body === data.body && row.event_date === data.eventDate && row.photo_ids === JSON.stringify(data.photoIds)) return;
+      const lastNote = db.prepare('SELECT note FROM revisions WHERE review_id = ? ORDER BY id DESC LIMIT 1').get(Number(row.id))?.note;
+      if (row.rating === data.rating && row.title === data.title && row.body === data.body && row.event_date === data.eventDate && row.photo_ids === JSON.stringify(data.photoIds) && (!data.note || data.note === lastNote)) return;
       const now = new Date().toISOString();
       db.prepare('UPDATE reviews SET rating = ?, title = ?, body = ?, event_date = ?, photo_ids = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
         .run(data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, Number(row.id));
@@ -158,29 +165,35 @@ export function createApp(options: AppOptions) {
     const row = findReview(req.params.id);
     const { body } = commentSchema.parse(req.body);
     const now = new Date().toISOString();
-    transaction(db, () => {
+    const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, { body }, () => {
       db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(Number(row.id), req.user!.id, body, now, now);
       notifications.enqueue('comment', req.user!.id, Number(row.id));
-    });
-    res.status(201).json({ ok: true });
+      return { ok: true };
+    }));
+    res.status(201).json(result);
   });
   app.patch('/api/comments/:id', authenticated, (req, res) => {
     const id = idSchema.parse(req.params.id);
     const row = db.prepare('SELECT * FROM comments WHERE id = ?').get(id);
     if (!row) throw new HttpError(404, 'Комментарий не найден.');
     if (row.user_id !== req.user!.id) throw new HttpError(403, 'Можно редактировать только свой комментарий.');
-    const { body } = commentSchema.parse(req.body);
-    db.prepare('UPDATE comments SET body = ?, updated_at = ? WHERE id = ?').run(body, new Date().toISOString(), id);
+    const { body, revision } = commentSchema.extend({ revision: z.number().int().positive().optional() }).parse(req.body);
+    if (revision !== undefined && revision !== row.revision) throw new HttpError(409, 'Комментарий уже изменён в другом окне. Твой текст остался в поле — сравни его с новой версией перед правкой.');
+    if (body !== row.body) {
+      const result = db.prepare('UPDATE comments SET body = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?').run(body, new Date().toISOString(), id, Number(row.revision));
+      if (!result.changes) throw new HttpError(409, 'Комментарий уже изменён в другом окне. Твой текст остался в поле.');
+    }
     res.json({ ok: true });
   });
   app.put('/api/reviews/:id/reactions', authenticated, (req, res) => {
     const row = findReview(req.params.id);
-    const { emoji } = z.object({ emoji: z.enum(emojis) }).parse(req.body);
+    const { emoji, active } = z.object({ emoji: z.enum(emojis), active: z.boolean().optional() }).parse(req.body);
     const id = Number(row.id), userId = req.user!.id;
     transaction(db, () => {
       const exists = db.prepare('SELECT 1 FROM reactions WHERE review_id = ? AND user_id = ? AND emoji = ?').get(id, userId, emoji);
-      if (exists) db.prepare('DELETE FROM reactions WHERE review_id = ? AND user_id = ? AND emoji = ?').run(id, userId, emoji);
-      else {
+      const desired = active ?? !exists;
+      if (exists && !desired) db.prepare('DELETE FROM reactions WHERE review_id = ? AND user_id = ? AND emoji = ?').run(id, userId, emoji);
+      else if (!exists && desired) {
         db.prepare('INSERT INTO reactions VALUES (?, ?, ?)').run(id, userId, emoji);
         notifications.enqueue('reaction', userId, id);
       }
@@ -211,6 +224,8 @@ export function createApp(options: AppOptions) {
     const { hashPassword } = await import('./auth.js');
     const hash = await hashPassword(input.password);
     transaction(db, () => {
+      requireLiveSession(db, req.cookies[sessionCookie], req.user!.id);
+      if (db.prepare('SELECT password_hash FROM users WHERE id = ?').get(req.user!.id)?.password_hash !== row.password_hash) throw new HttpError(409, 'Пароль уже изменён в другом окне. Обнови страницу перед новой сменой пароля.');
       db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user!.id);
       db.prepare('DELETE FROM sessions WHERE user_id = ?').run(req.user!.id);
       createSession(db, res, req.user!.id, options.secure);

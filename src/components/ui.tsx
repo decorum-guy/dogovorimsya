@@ -21,7 +21,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   return <div className={`brand ${compact ? 'compact' : ''}`}><span className="brand-icon"><Heart size={21} fill="currentColor" strokeWidth={1.5}/><span>✦</span></span><div><strong>Договоримся</strong><small>Оценки обсуждаются</small></div></div>;
 }
 export function Spinner() { return <LoaderCircle className="spin" size={19} aria-label="Загрузка" />; }
-export function Modal({ title, eyebrow, children, onClose, wide = false }: { title: string; eyebrow?: string; children: ReactNode; onClose: () => void; wide?: boolean }) {
+export function Modal({ title, eyebrow, children, onClose, wide = false, closeDisabled = false }: { title: string; eyebrow?: string; children: ReactNode; onClose: () => void; wide?: boolean; closeDisabled?: boolean }) {
   const titleId = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const close = useRef(onClose); close.current = onClose;
@@ -33,6 +33,6 @@ export function Modal({ title, eyebrow, children, onClose, wide = false }: { tit
     return () => { dialog.close(); document.body.classList.remove('modal-open'); previous?.focus(); };
   }, []);
   return <dialog ref={ref} className={`modal ${wide ? 'wide' : ''}`} aria-labelledby={titleId} onCancel={event => { event.preventDefault(); close.current(); }} onClick={event => { if (event.target === event.currentTarget) close.current(); }}>
-    <div className="modal-inner"><header className="modal-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div><button className="icon-button" aria-label="Закрыть" onClick={() => close.current()}><X size={22}/></button></header>{children}</div>
+    <div className="modal-inner"><header className="modal-head"><div>{eyebrow && <p className="eyebrow">{eyebrow}</p>}<h2 id={titleId}>{title}</h2></div><button className="icon-button" aria-label="Закрыть" disabled={closeDisabled} onClick={() => close.current()}><X size={22}/></button></header>{children}</div>
   </dialog>;
 }

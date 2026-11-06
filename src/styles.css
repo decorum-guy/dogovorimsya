@@ -302,3 +302,21 @@ select{width:100%;font:inherit;color:var(--ink);padding:12px 14px;background:#fa
  .detail-tabs{gap:16px}.detail-tabs>button{font-size:11px}.rating-caption{font-size:8px;max-width:155px}.hero .hero-description{max-width:225px}.sidebar-note{font-size:21px}
 }
 @media(prefers-reduced-motion:reduce){.switch:before,.switch>span{transition:none}}
+
+/* Reliability feedback must remain visible without covering form controls. */
+.form-fields{display:contents;min-inline-size:0;border:0;padding:0;margin:0}
+.sync-warning{position:sticky;top:0;z-index:70;display:flex;align-items:center;justify-content:center;gap:18px;padding:11px 22px;background:#fff0d3;color:#684b36;border-bottom:1px solid #dfc79a;font-size:12px;line-height:1.8}
+.sync-warning>.text-button{white-space:nowrap;font-size:12px;flex-shrink:0}
+.device-warning{margin:0 28px 22px;font-size:11px;line-height:1.9;color:#7b604b;background:#f7ead7;padding:13px 15px;border-radius:10px}
+.number-picker input[aria-invalid=true]{outline:2px solid #b14e64;outline-offset:3px;border-radius:8px}
+.section-heading>div{min-width:0}.card-category{overflow-wrap:anywhere}
+@media(max-width:760px){
+ .mobile-nav>button{min-width:0;flex:1;padding-left:4px;padding-right:4px}
+ .sync-warning{gap:12px;padding:9px 17px;font-size:11px}.sync-warning>.text-button{font-size:11px}
+ .device-warning{margin:0 18px 18px;font-size:11px}
+}
+@media(max-width:760px){
+ .hero .hero-description,.hero .hero-footnote{max-width:calc(100% - 140px)}
+ .hero>.love-letter{pointer-events:none}
+}
+.person-card h2,.modal-head h2,.detail-body,.comment p,.revision-list p,.revision-list h4,.card-main h3,.card-body,.page-subtitle{overflow-wrap:anywhere}

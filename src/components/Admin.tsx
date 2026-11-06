@@ -15,8 +15,8 @@ export function Admin({ data }: { data: Bootstrap }) {
   async function refresh() { setState(await api<AccessState>('/api/admin/access')); }
   useEffect(() => { void refresh().catch(e => setError((e as Error).message)); }, []);
   async function issue() {
-    setBusy(true); setError(''); setMessage(''); setIssued(null);
-    try { const result = await api<{ code: string; purpose: string }>('/api/admin/codes', json('POST', { userId: target === 'invite' ? null : Number(target) })); setIssued(result); await refresh(); }
+    setBusy(true); setError(''); setMessage(''); setIssued(null); setCopied('');
+    try { const result = await api<{ code: string; purpose: string }>('/api/admin/codes', json('POST', { userId: target === 'invite' ? null : Number(target) })); setIssued(result); try { await refresh(); } catch { setMessage('Код создан и показан ниже. Список кодов пока не обновился — сохрани выданный код перед выходом.'); } }
     catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
   async function copy(value: string, kind: string) { try { await navigator.clipboard.writeText(value); setCopied(kind); } catch { setError('Не получилось скопировать автоматически. Выдели код и скопируй вручную.'); } }

@@ -2,6 +2,7 @@ import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash } fr
 import { promisify } from 'node:util';
 import type { Response } from 'express';
 import type { DB } from './db.js';
+import { HttpError } from './errors.js';
 
 const scrypt = promisify(scryptCallback);
 export async function hashPassword(password: string) {
@@ -18,6 +19,9 @@ export async function verifyPassword(password: string, stored: string) {
 }
 export const tokenHash = (token: string) => createHash('sha256').update(token).digest('hex');
 export const sessionCookie = 'dogovorimsya_session';
+export function requireLiveSession(db: DB, token: unknown, userId: number) {
+  if (typeof token !== 'string' || !db.prepare('SELECT 1 FROM sessions WHERE token_hash = ? AND user_id = ? AND expires_at > ?').get(tokenHash(token), userId, Date.now())) throw new HttpError(401, 'Сессия завершилась. Войди ещё раз — твои записи на месте.');
+}
 export const sessionDuration = 180 * 24 * 60 * 60 * 1000;
 export function setSessionCookie(res: Response, token: string, secure: boolean) {
   res.cookie(sessionCookie, token, { httpOnly: true, secure, sameSite: 'strict', maxAge: sessionDuration, path: '/' });
