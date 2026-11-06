@@ -16,6 +16,7 @@ import { getCoupleStatistics } from './statistics.js';
 import { createNotifications, type PushSender } from './notifications.js';
 import type { User } from '../shared/types.js';
 import { once } from './write-receipts.js';
+import { journalDate } from '../shared/journal-days.js';
 
 declare global { namespace Express { interface Request { user?: User } } }
 export interface AppOptions { dataDir: string; origin: string; secure: boolean; demo: boolean; trustProxy?: boolean; pushSender?: PushSender }
@@ -131,10 +132,12 @@ export function createApp(options: AppOptions) {
     next();
   });
   app.post('/api/reviews', authenticated, reviewer, (req, res) => {
-    const data = reviewSchema.parse(req.body);
-    checkPhotos(data.photoIds, req.user!);
-    const now = new Date().toISOString();
-    const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, data, () => {
+    // Accept dates from older clients, but stamp new notes at publication.
+    const input = reviewSchema.partial({ eventDate: true }).parse(req.body);
+    checkPhotos(input.photoIds, req.user!);
+    const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, input, () => {
+      const published = new Date(), now = published.toISOString();
+      const data = { ...input, eventDate: journalDate(published) };
       const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, photo_ids, created_at, updated_at, design_variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(req.user!.id, data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
       const id = Number(result.lastInsertRowid);

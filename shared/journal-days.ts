@@ -2,8 +2,15 @@ export const journalTimeZone = 'Europe/Moscow';
 const calendar = new Intl.DateTimeFormat('en-GB', {
   timeZone: journalTimeZone, year: 'numeric', month: '2-digit', day: '2-digit',
 });
+function calendarParts(date: Date) {
+  return Object.fromEntries(calendar.formatToParts(date).map(part => [part.type, part.value]));
+}
+export function journalDate(date = new Date()) {
+  const parts = calendarParts(date);
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
 function calendarDay(date: Date) {
-  const parts = Object.fromEntries(calendar.formatToParts(date).map(part => [part.type, part.value]));
+  const parts = calendarParts(date);
   return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day)) / 86_400_000;
 }
 // Calendar days, inclusive: registration day is day one, in the pair's timezone.

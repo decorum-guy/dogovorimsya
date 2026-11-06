@@ -33,6 +33,7 @@ test('write receipts prevent duplicate reviews/comments and explicit reaction st
       for (const response of responses) assert.equal(response.status, 201);
       const results = await Promise.all(responses.map(response => response.json()));
       assert.equal(results[0].id, results[1].id); id = results[0].id;
+      review.eventDate = String(db.prepare('SELECT event_date FROM reviews WHERE id = ?').get(id)!.event_date);
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM reviews').get()!.n, 1);
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM revisions').get()!.n, 1);
       assert.equal((await request('/api/reviews', 'POST', { ...review, rating: 10 }, 'reviewer', key)).status, 409);
