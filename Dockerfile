@@ -13,7 +13,9 @@ COPY --from=builder /app/package.json /app/package-lock.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/dist ./dist
-RUN mkdir -p /app/data && chown node:node /app/data
+# Source permissions can inherit a private checkout umask. Runtime files contain
+# no personal data; make them readable before switching to the unprivileged user.
+RUN chmod -R a+rX /app && mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3000
 CMD ["node", "build/server/index.js"]
