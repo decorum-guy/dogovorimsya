@@ -16,7 +16,7 @@ import { getCoupleStatistics } from './statistics.js';
 import { createNotifications, type PushSender } from './notifications.js';
 import type { User } from '../shared/types.js';
 import { once } from './write-receipts.js';
-import { journalDate } from '../shared/journal-days.js';
+import { journalDate, journalTime } from '../shared/journal-days.js';
 
 declare global { namespace Express { interface Request { user?: User } } }
 export interface AppOptions { dataDir: string; origin: string; secure: boolean; demo: boolean; trustProxy?: boolean; pushSender?: PushSender }
@@ -27,6 +27,7 @@ const reviewSchema = z.object({
   title: z.string().trim().min(1).max(140),
   body: z.string().trim().min(1).max(10000),
   eventDate: z.iso.date(),
+  eventTime: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/).optional(),
   photoIds: z.array(mediaId).max(5).refine(ids => new Set(ids).size === ids.length),
   note: z.string().trim().max(1000).default(''),
   revision: z.number().int().positive().optional(),
@@ -93,9 +94,9 @@ export function createApp(options: AppOptions) {
       }
     }
   };
-  const insertRevision = (id: number, userId: number, data: z.infer<typeof reviewSchema>, now: string) => {
-    db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, photo_ids, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(id, userId, data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), data.note, now);
+  const insertRevision = (id: number, userId: number, data: Omit<z.infer<typeof reviewSchema>, 'eventTime'> & { eventTime: string | null }, now: string) => {
+    db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, event_time, photo_ids, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(id, userId, data.rating, data.title, data.body, data.eventDate, data.eventTime, JSON.stringify(data.photoIds), data.note, now);
   };
   app.get('/api/status', (_req, res) => res.json({ demo: options.demo }));
   app.post('/api/login', rateLimit({ windowMs: 15 * 60_000, limit: 15, standardHeaders: 'draft-8', legacyHeaders: false, message: { error: 'Слишком много попыток. Вернись через 15 минут.' } }), async (req, res) => {
@@ -137,9 +138,9 @@ export function createApp(options: AppOptions) {
     checkPhotos(input.photoIds, req.user!);
     const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, input, () => {
       const published = new Date(), now = published.toISOString();
-      const data = { ...input, eventDate: journalDate(published) };
-      const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, photo_ids, created_at, updated_at, design_variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(req.user!.id, data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
+      const data = { ...input, eventDate: journalDate(published), eventTime: journalTime(published) };
+      const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, event_time, photo_ids, created_at, updated_at, design_variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(req.user!.id, data.rating, data.title, data.body, data.eventDate, data.eventTime, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
       const id = Number(result.lastInsertRowid);
       insertRevision(id, req.user!.id, data, now);
       notifications.enqueue('review_created', req.user!.id, id);
@@ -148,17 +149,19 @@ export function createApp(options: AppOptions) {
     res.status(201).json(result);
   });
   app.patch('/api/reviews/:id', authenticated, reviewer, (req, res) => {
-    const data = reviewSchema.extend({ revision: z.number().int().positive() }).parse(req.body);
-    checkPhotos(data.photoIds, req.user!);
+    const input = reviewSchema.extend({ revision: z.number().int().positive() }).parse(req.body);
+    checkPhotos(input.photoIds, req.user!);
     transaction(db, () => {
       const row = findReview(req.params.id);
+      // Date-only clients keep the saved clock rather than erasing it.
+      const data = { ...input, eventTime: input.eventTime ?? row.event_time as string | null };
       if (row.author_id !== req.user!.id) throw new HttpError(403, 'Этот отзыв может изменить только его автор.');
       if (row.revision !== data.revision) throw new HttpError(409, 'Отзыв уже изменён в другом окне. Закрой редактор и обнови ленту.');
       const lastNote = db.prepare('SELECT note FROM revisions WHERE review_id = ? ORDER BY id DESC LIMIT 1').get(Number(row.id))?.note;
-      if (row.rating === data.rating && row.title === data.title && row.body === data.body && row.event_date === data.eventDate && row.photo_ids === JSON.stringify(data.photoIds) && (!data.note || data.note === lastNote)) return;
+      if (row.rating === data.rating && row.title === data.title && row.body === data.body && row.event_date === data.eventDate && row.event_time === data.eventTime && row.photo_ids === JSON.stringify(data.photoIds) && (!data.note || data.note === lastNote)) return;
       const now = new Date().toISOString();
-      db.prepare('UPDATE reviews SET rating = ?, title = ?, body = ?, event_date = ?, photo_ids = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
-        .run(data.rating, data.title, data.body, data.eventDate, JSON.stringify(data.photoIds), now, Number(row.id));
+      db.prepare('UPDATE reviews SET rating = ?, title = ?, body = ?, event_date = ?, event_time = ?, photo_ids = ?, updated_at = ?, revision = revision + 1 WHERE id = ?')
+        .run(data.rating, data.title, data.body, data.eventDate, data.eventTime, JSON.stringify(data.photoIds), now, Number(row.id));
       insertRevision(Number(row.id), req.user!.id, data, now);
       if (row.rating !== data.rating) notifications.enqueue('rating_changed', req.user!.id, Number(row.id));
     });

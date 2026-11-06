@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { hashPassword } from './auth.js';
 import { transaction, type DB } from './db.js';
+import { journalDate, journalTime } from '../shared/journal-days.js';
 
 // Fictional fixtures. This function is never called in the private/production app.
 export async function seedDemo(db: DB) {
@@ -40,12 +41,12 @@ export async function seedDemo(db: DB) {
     ];
     for (const f of fixtures) {
       const date = new Date(); date.setDate(date.getDate() - f.day);
-      const stamp = date.toISOString(), event = stamp.slice(0, 10), photos = JSON.stringify(f.photos);
-      const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, photo_ids, created_at, updated_at, revision) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)').run(f.rating, f.title, f.body, event, photos, stamp, stamp, f.original ? 2 : 1);
+      const stamp = date.toISOString(), event = journalDate(date), time = journalTime(date), photos = JSON.stringify(f.photos);
+      const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, event_time, photo_ids, created_at, updated_at, revision) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(f.rating, f.title, f.body, event, time, photos, stamp, stamp, f.original ? 2 : 1);
       const id = Number(result.lastInsertRowid);
       db.prepare('UPDATE reviews SET design_variant = ? WHERE id = ?').run((id - 1) % 5, id);
-      db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, photo_ids, note, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)').run(id, f.original || f.rating, f.title, f.body, event, photos, '', stamp);
-      if (f.original) db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, photo_ids, note, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?)').run(id, f.rating, f.title, f.body, event, photos, 'Перечитал отзыв. Такой вечер заслуживает честной пятёрки.', stamp);
+      db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, event_time, photo_ids, note, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, f.original || f.rating, f.title, f.body, event, time, photos, '', stamp);
+      if (f.original) db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, event_time, photo_ids, note, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, f.rating, f.title, f.body, event, time, photos, 'Перечитал отзыв. Такой вечер заслуживает честной пятёрки.', stamp);
     }
     const now = new Date().toISOString();
     db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (2, 2, ?, ?, ?)').run('Это были очень красивые пять минут 😌', now, now);

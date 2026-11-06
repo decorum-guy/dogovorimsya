@@ -15,7 +15,7 @@ test('the audit migration preserves v4 data and old edited comments while adding
     db.exec("INSERT INTO comments (review_id,user_id,body,created_at,updated_at) VALUES (1,1,'Ранее исправленный комментарий','2026-11-06T00:00:00Z','2026-11-06T00:01:00Z'); INSERT INTO notification_preferences VALUES (1,0,'{}',NULL,1);");
     const comment = db.prepare('SELECT * FROM comments').get()!;
     db.close(); db = openDatabase(directory);
-    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 5);
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 6);
     assert.equal(db.prepare('SELECT COUNT(*) AS n FROM write_receipts').get()!.n, 0);
     const migrated = db.prepare('SELECT * FROM comments').get()!;
     assert.equal(migrated.revision, 1);

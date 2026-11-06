@@ -2,6 +2,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Review, Revision, User } from '../shared/types.js';
+import { recordedPublicationTime } from '../shared/journal-days.js';
 
 export function openDatabase(directory: string) {
   mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -128,6 +129,16 @@ export function openDatabase(directory: string) {
     if (!columns.some(column => column.name === 'registered_at')) db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT');
     const commentColumns = db.prepare('PRAGMA table_info(comments)').all();
     if (!commentColumns.some(column => column.name === 'revision')) db.exec('ALTER TABLE comments ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+    for (const table of ['reviews', 'revisions']) {
+      if (db.prepare(`PRAGMA table_info(${table})`).all().some(column => column.name === 'event_time')) continue;
+      db.exec(`ALTER TABLE ${table} ADD COLUMN event_time TEXT CHECK(event_time IS NULL OR event_time GLOB '[0-2][0-9]:[0-5][0-9]' AND event_time < '24:00')`);
+      // Old versions had no editable clock. Every snapshot inherits the note's
+      // original publication time, never the time of a subsequent edit.
+      const rows = db.prepare(table === 'reviews' ? 'SELECT id, created_at FROM reviews'
+        : 'SELECT v.id, r.created_at FROM revisions v JOIN reviews r ON r.id = v.review_id').all();
+      const update = db.prepare(`UPDATE ${table} SET event_time = ? WHERE id = ?`);
+      for (const row of rows) update.run(recordedPublicationTime(String(row.created_at)), Number(row.id));
+    }
     // A claimed invitation is evidence of registration. Never substitute a review
     // date, deployment date or a later recovery-code issue date for it.
     db.exec(`
@@ -136,7 +147,7 @@ export function openDatabase(directory: string) {
       ) WHERE registered_at IS NULL AND EXISTS (
         SELECT 1 FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
       );
-      PRAGMA user_version = 5;
+      PRAGMA user_version = 6;
     `);
   });
   return db;
@@ -161,14 +172,16 @@ export function getReviews(db: DB, userId: number): Review[] {
   const comments = db.prepare('SELECT * FROM comments ORDER BY id').all();
   const reactions = db.prepare('SELECT * FROM reactions').all();
   const favorites = new Set(db.prepare('SELECT review_id FROM favorites WHERE user_id = ?').all(userId).map(r => Number(r.review_id)));
-  return db.prepare('SELECT * FROM reviews ORDER BY event_date DESC, id DESC').all().map(r => ({
+  return db.prepare("SELECT * FROM reviews ORDER BY event_date DESC, COALESCE(event_time, '') DESC, id DESC").all().map(r => ({
     id: Number(r.id), authorId: Number(r.author_id), rating: Number(r.rating),
     title: String(r.title), body: String(r.body), eventDate: String(r.event_date),
+    eventTime: r.event_time === null ? null : String(r.event_time),
     photoIds: JSON.parse(String(r.photo_ids)), createdAt: String(r.created_at),
     updatedAt: String(r.updated_at), revision: Number(r.revision), designVariant: Number(r.design_variant),
     revisions: revisions.filter(v => v.review_id === r.id).map((v): Revision => ({
       id: Number(v.id), userId: Number(v.user_id), rating: Number(v.rating),
       title: String(v.title), body: String(v.body), eventDate: String(v.event_date),
+      eventTime: v.event_time === null ? null : String(v.event_time),
       photoIds: JSON.parse(String(v.photo_ids)), note: String(v.note), createdAt: String(v.created_at),
     })),
     comments: comments.filter(c => c.review_id === r.id).map(c => ({

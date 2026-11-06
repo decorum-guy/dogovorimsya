@@ -13,6 +13,7 @@ export interface Revision {
   title: string;
   body: string;
   eventDate: string;
+  eventTime: string | null;
   photoIds: string[];
   note: string;
   createdAt: string;
@@ -33,6 +34,7 @@ export interface Review {
   title: string;
   body: string;
   eventDate: string;
+  eventTime: string | null;
   photoIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -67,7 +69,8 @@ export interface ReviewInput {
   rating: number;
   title: string;
   body: string;
-  eventDate: string;
+  eventDate?: string;
+  eventTime?: string;
   photoIds: string[];
   note?: string;
   revision?: number;

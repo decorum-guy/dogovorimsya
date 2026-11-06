@@ -7,6 +7,9 @@ export const score = (rating: number) => (rating / 10).toFixed(1);
 export function dateLabel(date: string, full = false) {
   return new Date(date.length === 10 ? `${date}T12:00:00` : date).toLocaleDateString('ru-RU', { day: 'numeric', month: full ? 'long' : 'short', ...(full ? { year: 'numeric' } : {}) });
 }
+export function noteDateLabel(date: string, time: string | null, full = false) {
+  return dateLabel(date, full) + (time ? ` · ${time}` : '');
+}
 export function Avatar({ user, small = false }: { user?: User; small?: boolean }) {
   return <span className={`avatar ${small ? 'small' : ''} ${user?.role === 'recipient' ? 'rose' : 'plum'}`}>
     {user?.avatarId ? <img src={mediaUrl(user.avatarId)} alt={user.name} /> : user?.name?.slice(0, 1) || <Heart size={18} />}

@@ -2,6 +2,16 @@ export const journalTimeZone = 'Europe/Moscow';
 const calendar = new Intl.DateTimeFormat('en-GB', {
   timeZone: journalTimeZone, year: 'numeric', month: '2-digit', day: '2-digit',
 });
+const clock = new Intl.DateTimeFormat('en-GB', {
+  timeZone: journalTimeZone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+export function journalTime(date = new Date()) { return clock.format(date); }
+// Date-only legacy values are not evidence of an actual publication time.
+export function recordedPublicationTime(timestamp: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(timestamp)) return null;
+  const date = new Date(timestamp);
+  return Number.isFinite(date.getTime()) ? journalTime(date) : null;
+}
 function calendarParts(date: Date) {
   return Object.fromEntries(calendar.formatToParts(date).map(part => [part.type, part.value]));
 }
