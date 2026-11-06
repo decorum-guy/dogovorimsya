@@ -17,5 +17,6 @@ COPY --from=builder /app/dist ./dist
 # no personal data; make them readable before switching to the unprivileged user.
 RUN chmod -R a+rX /app && mkdir -p /app/data && chown node:node /app/data
 USER node
+RUN node --input-type=module -e "import { accessSync, constants } from 'node:fs'; for (const path of ['package.json', 'dist/index.html', 'dist/sw.js', 'dist/offline.html']) accessSync(path, constants.R_OK); await import('./build/server/app.js');"
 EXPOSE 3000
 CMD ["node", "build/server/index.js"]
