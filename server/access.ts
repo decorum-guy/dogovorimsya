@@ -25,8 +25,8 @@ export function installAccessRoutes(app: Express, db: DB, secure: boolean, authe
       if (code.user_id !== null) throw new HttpError(409, 'По этому коду уже создан аккаунт. Используй его для восстановления доступа.');
       if (db.prepare('SELECT id FROM users WHERE role = ?').get(String(code.role))) throw new HttpError(409, 'Профиль для этого приглашения уже создан.');
       if (db.prepare('SELECT id FROM users WHERE login = ?').get(input.login)) throw new HttpError(409, 'Этот логин уже занят. Придумай другой.');
-      const id = Number(db.prepare('INSERT INTO users (login, password_hash, name, role) VALUES (?, ?, ?, ?)').run(input.login, hash, input.name, String(code.role)).lastInsertRowid);
       const now = new Date().toISOString();
+      const id = Number(db.prepare('INSERT INTO users (login, password_hash, name, role, registered_at) VALUES (?, ?, ?, ?, ?)').run(input.login, hash, input.name, String(code.role), now).lastInsertRowid);
       db.prepare('UPDATE access_codes SET user_id = ?, claimed_at = ?, last_used_at = ?, expires_at = NULL WHERE id = ?').run(id, now, now, String(code.id));
       db.prepare('UPDATE access_codes SET revoked_at = ? WHERE role = ? AND user_id IS NULL AND revoked_at IS NULL').run(now, String(code.role));
       createSession(db, res, id, secure);

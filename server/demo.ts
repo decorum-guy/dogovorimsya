@@ -7,7 +7,11 @@ import { transaction, type DB } from './db.js';
 
 // Fictional fixtures. This function is never called in the private/production app.
 export async function seedDemo(db: DB) {
-  if (db.prepare('SELECT 1 FROM users').get()) return;
+  const registeredAt = new Date(Date.now() - 6 * 86_400_000).toISOString();
+  if (db.prepare('SELECT 1 FROM users').get()) {
+    db.prepare('UPDATE users SET registered_at = ? WHERE registered_at IS NULL').run(registeredAt);
+    return;
+  }
   const password = await hashPassword(randomBytes(32).toString('hex'));
   const imageId = randomUUID();
   const directory = String(db.prepare('PRAGMA database_list').get()!.file).replace(/app\.db$/, '');
@@ -23,8 +27,8 @@ export async function seedDemo(db: DB) {
   </svg>`;
   await writeFile(join(directory, 'uploads', `${imageId}.webp`), await sharp(Buffer.from(coffee)).webp({ quality: 90 }).toBuffer(), { mode: 0o600 });
   transaction(db, () => {
-    db.prepare('INSERT INTO users (id, login, password_hash, name, role) VALUES (1, ?, ?, ?, ?)').run('demo-author', password, 'Он', 'reviewer');
-    db.prepare('INSERT INTO users (id, login, password_hash, name, role) VALUES (2, ?, ?, ?, ?)').run('demo-recipient', password, 'Она', 'recipient');
+    db.prepare('INSERT INTO users (id, login, password_hash, name, role, registered_at) VALUES (1, ?, ?, ?, ?, ?)').run('demo-author', password, 'Он', 'reviewer', registeredAt);
+    db.prepare('INSERT INTO users (id, login, password_hash, name, role, registered_at) VALUES (2, ?, ?, ?, ?, ?)').run('demo-recipient', password, 'Она', 'recipient', registeredAt);
     db.prepare('INSERT INTO media VALUES (?, 1, ?, ?)').run(imageId, 'photo', new Date().toISOString());
     const fixtures = [
       { rating: 50, title: 'Завтрак, который всё решил', body: 'Проснулся от запаха кофе. На столе — завтрак, рядом — ты в моей футболке. У комиссии нет замечаний. Только предложение повторить.', photos: [imageId], day: 0 },
@@ -46,5 +50,6 @@ export async function seedDemo(db: DB) {
     const now = new Date().toISOString();
     db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (2, 2, ?, ?, ?)').run('Это были очень красивые пять минут 😌', now, now);
     db.prepare("INSERT INTO reactions VALUES (1, 2, '❤️'), (2, 1, '😂'), (3, 2, '🔥'), (4, 2, '❤️')").run();
+    db.prepare('INSERT INTO favorites VALUES (1, 1), (4, 1), (1, 2), (2, 2), (4, 2)').run();
   });
 }

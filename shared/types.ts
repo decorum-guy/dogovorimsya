@@ -1,3 +1,5 @@
+import type { Tone } from './ratings.js';
+
 export type Role = 'reviewer' | 'recipient';
 export interface User {
   id: number;
@@ -45,6 +47,20 @@ export interface Bootstrap {
   users: User[];
   reviews: Review[];
   demo: boolean;
+  statistics: CoupleStatistics;
+}
+export interface CoupleStatistics {
+  startedAt: string | null;
+  reviewCount: number;
+  averageRating: number | null;
+  perfectCount: number;
+  photoCount: number;
+  commentCount: number;
+  revisedRatingCount: number;
+  raisedRatingCount: number;
+  favorites: { reviewer: number; recipient: number; mutual: number };
+  reactions: { emoji: string; count: number }[];
+  ratingDistribution: Record<Tone, number>;
 }
 export interface ReviewInput {
   rating: number;

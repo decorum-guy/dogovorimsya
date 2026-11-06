@@ -107,6 +107,14 @@ test('private two-person journal: permissions, history, uploads and sessions', a
       await request(`/api/reviews/${id}/favorite`, 'PUT', { favorite: true });
       assert.equal((await bootstrap()).reviews[0].favorite, true);
       assert.equal((await bootstrap('recipient')).reviews[0].favorite, false);
+      assert.deepEqual((await bootstrap()).statistics.favorites, { reviewer: 1, recipient: 0, mutual: 0 });
+      await request(`/api/reviews/${id}/favorite`, 'PUT', { favorite: true, userId: 1 }, 'recipient');
+      assert.equal((await bootstrap('recipient')).reviews[0].favorite, true);
+      assert.deepEqual((await bootstrap()).statistics.favorites, { reviewer: 1, recipient: 1, mutual: 1 });
+      await request(`/api/reviews/${id}/favorite`, 'PUT', { favorite: false });
+      assert.equal((await bootstrap()).reviews[0].favorite, false);
+      assert.equal((await bootstrap('recipient')).reviews[0].favorite, true);
+      assert.deepEqual((await bootstrap('recipient')).statistics.favorites, { reviewer: 0, recipient: 1, mutual: 0 });
     });
     await t.test('profile ownership and logout invalidate access to private data', async () => {
       assert.equal((await request('/api/profile', 'PATCH', { name: 'Новое тестовое имя', avatarId: photoId })).status, 400);

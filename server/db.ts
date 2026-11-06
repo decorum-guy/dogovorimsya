@@ -17,7 +17,8 @@ export function openDatabase(directory: string) {
       password_hash TEXT NOT NULL,
       name TEXT NOT NULL,
       role TEXT NOT NULL UNIQUE CHECK(role IN ('reviewer', 'recipient')),
-      avatar_id TEXT REFERENCES media(id)
+      avatar_id TEXT REFERENCES media(id),
+      registered_at TEXT
     );
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
@@ -88,8 +89,21 @@ export function openDatabase(directory: string) {
     );
     CREATE INDEX IF NOT EXISTS revisions_review ON revisions(review_id);
     CREATE INDEX IF NOT EXISTS comments_review ON comments(review_id);
-    PRAGMA user_version = 2;
   `);
+  transaction(db, () => {
+    const columns = db.prepare('PRAGMA table_info(users)').all();
+    if (!columns.some(column => column.name === 'registered_at')) db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT');
+    // A claimed invitation is evidence of registration. Never substitute a review
+    // date, deployment date or a later recovery-code issue date for it.
+    db.exec(`
+      UPDATE users SET registered_at = (
+        SELECT MIN(claimed_at) FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
+      ) WHERE registered_at IS NULL AND EXISTS (
+        SELECT 1 FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
+      );
+      PRAGMA user_version = 3;
+    `);
+  });
   return db;
 }
 

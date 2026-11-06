@@ -12,6 +12,7 @@ import { openDatabase, getReviews, getUsers, publicUser, transaction, type Row }
 import { createSession, sessionCookie, sessionDuration, setSessionCookie, tokenHash, verifyPassword } from './auth.js';
 import { installAccessRoutes } from './access.js';
 import { HttpError } from './errors.js';
+import { getCoupleStatistics } from './statistics.js';
 import type { User } from '../shared/types.js';
 
 declare global { namespace Express { interface Request { user?: User } } }
@@ -115,7 +116,7 @@ export function createApp(options: AppOptions) {
     res.clearCookie(sessionCookie, { path: '/', httpOnly: true, sameSite: 'strict', secure: options.secure });
     res.json({ ok: true });
   });
-  app.get('/api/bootstrap', authenticated, (req, res) => res.json({ user: req.user, users: getUsers(db), reviews: getReviews(db, req.user!.id), demo: options.demo }));
+  app.get('/api/bootstrap', authenticated, (req, res) => res.json({ user: req.user, users: getUsers(db), reviews: getReviews(db, req.user!.id), statistics: getCoupleStatistics(db), demo: options.demo }));
   installAccessRoutes(app, db, options.secure, authenticated, (req, _res, next) => {
     if (req.user?.role !== 'reviewer') throw new HttpError(403, 'Коды доступа может выдавать только администратор.');
     next();

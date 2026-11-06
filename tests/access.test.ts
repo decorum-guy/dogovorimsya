@@ -36,6 +36,10 @@ test('invitation and recovery codes are private, single-account and revocable', 
       const response = await request('/api/register', 'POST', { ...registration, code, role: 'reviewer' }, 'anonymous');
       assert.equal(response.status, 201); remember('recipient', response);
       const body = await response.json(); recipientId = body.user.id; assert.equal(body.user.role, 'recipient');
+      const registered = db.prepare('SELECT registered_at FROM users WHERE id = ?').get(recipientId)!.registered_at;
+      assert.ok(registered);
+      assert.equal(registered, db.prepare('SELECT claimed_at FROM access_codes WHERE id = ?').get(codeId)!.claimed_at);
+      assert.equal((await (await request('/api/bootstrap', 'GET', undefined, 'recipient')).json()).statistics.startedAt, registered);
       assert.equal((await request('/api/register', 'POST', { ...registration, login: 'third-user', code }, 'anonymous')).status, 409);
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users').get()!.n, 2);
       assert.equal((await request('/api/admin/access', 'GET', undefined, 'recipient')).status, 403);
