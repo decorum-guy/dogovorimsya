@@ -26,7 +26,7 @@ tests/                       интеграционные тесты
 data/                        игнорируемая БД и приватные фото
 ```
 
-`npm run dev` запускает API и Vite одним процессом на `localhost:3000`. `npm run build` генерирует иконки, проверяет TypeScript, компилирует сервер в `build/` и собирает клиент в `dist/`. `npm start` запускает скомпилированный сервер; production требует `APP_ORIGIN=https://…` и `COOKIE_SECURE=true`. Подготовлены файлы Docker/Compose/Caddy, но реальный VPS и домен ещё не настраивались; см. deployment.md.
+`npm run dev` запускает API и Vite одним процессом на `localhost:3000`. `npm run build` генерирует иконки, проверяет TypeScript, компилирует сервер в `build/` и собирает клиент в `dist/`. `npm start` запускает скомпилированный сервер; production требует `APP_ORIGIN=https://…` и `COOKIE_SECURE=true`. Docker/Compose/Caddy проверены при развёртывании на VPS; реальные адреса и настройки остаются в игнорируемом `deploy/.env`, см. deployment.md.
 
 ## Данные и права
 
