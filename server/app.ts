@@ -33,7 +33,11 @@ const reviewSchema = z.object({
   revision: z.number().int().positive().optional(),
   designVariant: z.number().int().min(0).max(4).optional(),
 });
-const commentSchema = z.object({ body: z.string().trim().min(1).max(3000) });
+const commentPhotosSchema = z.array(z.object({
+  id: mediaId, caption: z.string().trim().max(500).default(''),
+})).max(5).refine(photos => new Set(photos.map(photo => photo.id)).size === photos.length);
+const commentBodySchema = z.string().trim().max(3000);
+const commentSchema = z.object({ body: commentBodySchema.default(''), photos: commentPhotosSchema.optional() });
 const emojis = ['❤️', '🔥', '😂', '🥺'] as const;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 16 * 1024 * 1024, files: 5, fields: 2 } });
 
@@ -126,7 +130,15 @@ export function createApp(options: AppOptions) {
     res.clearCookie(sessionCookie, { path: '/', httpOnly: true, sameSite: 'strict', secure: options.secure });
     res.json({ ok: true });
   });
-  app.get('/api/bootstrap', authenticated, (req, res) => res.json({ user: req.user, users: getUsers(db), reviews: getReviews(db, req.user!.id), statistics: getCoupleStatistics(db), demo: options.demo }));
+  const bootstrap = (user: User) => ({ user, users: getUsers(db), reviews: getReviews(db, user.id), statistics: getCoupleStatistics(db), demo: options.demo });
+  app.get('/api/bootstrap', authenticated, (req, res) => res.json(bootstrap(req.user!)));
+  const commentReply = (req: Request, res: Response, result: object, status = 200) => {
+    if (req.get('Prefer') === 'return=representation') {
+      res.set('Preference-Applied', 'return=representation');
+      return res.status(status).json({ ...result, bootstrap: bootstrap(req.user!) });
+    }
+    return res.status(status).json(result);
+  };
   notifications.install(app, authenticated);
   installAccessRoutes(app, db, options.secure, authenticated, (req, _res, next) => {
     if (req.user?.role !== 'reviewer') throw new HttpError(403, 'Коды доступа может выдавать только администратор.');
@@ -169,27 +181,42 @@ export function createApp(options: AppOptions) {
   });
   app.post('/api/reviews/:id/comments', authenticated, (req, res) => {
     const row = findReview(req.params.id);
-    const { body } = commentSchema.parse(req.body);
+    const { body, photos = [] } = commentSchema.parse(req.body);
+    if (!body && !photos.length) throw new HttpError(400, 'Напиши комментарий или прикрепи фотографию.');
+    checkPhotos(photos.map(photo => photo.id), req.user!);
     const now = new Date().toISOString();
-    const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, { body }, () => {
-      db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?)').run(Number(row.id), req.user!.id, body, now, now);
+    // Preserve the existing receipt hash for text-only retries across deployment.
+    const payload = photos.length ? { body, photos } : { body };
+    const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, payload, () => {
+      db.prepare('INSERT INTO comments (review_id, user_id, body, photos, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)').run(Number(row.id), req.user!.id, body, JSON.stringify(photos), now, now);
       notifications.enqueue('comment', req.user!.id, Number(row.id));
       return { ok: true };
     }));
-    res.status(201).json(result);
+    commentReply(req, res, result, 201);
+  });
+  app.get('/api/reviews/:id/comments/version', authenticated, (req, res) => {
+    const review = findReview(req.params.id);
+    const row = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(id), 0) AS last_id, COALESCE(SUM(revision), 0) AS revisions FROM comments WHERE review_id = ?').get(Number(review.id))!;
+    res.json({ version: [row.n, row.last_id, row.revisions].join(':') });
   });
   app.patch('/api/comments/:id', authenticated, (req, res) => {
     const id = idSchema.parse(req.params.id);
     const row = db.prepare('SELECT * FROM comments WHERE id = ?').get(id);
     if (!row) throw new HttpError(404, 'Комментарий не найден.');
     if (row.user_id !== req.user!.id) throw new HttpError(403, 'Можно редактировать только свой комментарий.');
-    const { body, revision } = commentSchema.extend({ revision: z.number().int().positive().optional() }).parse(req.body);
+    const { body: suppliedBody, photos, revision } = z.object({
+      body: commentBodySchema.optional(), photos: commentPhotosSchema.optional(), revision: z.number().int().positive().optional(),
+    }).parse(req.body);
+    const body = suppliedBody ?? String(row.body);
+    const nextPhotos = photos ?? JSON.parse(String(row.photos));
+    if (!body && !nextPhotos.length) throw new HttpError(400, 'Оставь текст или хотя бы одну фотографию.');
+    if (photos) checkPhotos(photos.map(photo => photo.id), req.user!);
     if (revision !== undefined && revision !== row.revision) throw new HttpError(409, 'Комментарий уже изменён в другом окне. Твой текст остался в поле — сравни его с новой версией перед правкой.');
-    if (body !== row.body) {
-      const result = db.prepare('UPDATE comments SET body = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?').run(body, new Date().toISOString(), id, Number(row.revision));
+    if (body !== row.body || JSON.stringify(nextPhotos) !== row.photos) {
+      const result = db.prepare('UPDATE comments SET body = ?, photos = ?, updated_at = ?, revision = revision + 1 WHERE id = ? AND revision = ?').run(body, JSON.stringify(nextPhotos), new Date().toISOString(), id, Number(row.revision));
       if (!result.changes) throw new HttpError(409, 'Комментарий уже изменён в другом окне. Твой текст остался в поле.');
     }
-    res.json({ ok: true });
+    commentReply(req, res, { ok: true });
   });
   app.put('/api/reviews/:id/reactions', authenticated, (req, res) => {
     const row = findReview(req.params.id);
@@ -240,7 +267,6 @@ export function createApp(options: AppOptions) {
   });
   app.post('/api/uploads', authenticated, upload.array('photos', 5), async (req, res) => {
     const kind = z.enum(['photo', 'avatar']).parse(req.body.kind);
-    if (kind === 'photo' && req.user!.role !== 'reviewer') throw new HttpError(403, 'Фотографии к отзывам добавляет автор.');
     const files = req.files as Express.Multer.File[];
     if (!files?.length || (kind === 'avatar' && files.length !== 1)) throw new HttpError(400, 'Выбери фотографию.');
     const staged: { id: string; buffer: Buffer }[] = [];
@@ -260,6 +286,7 @@ export function createApp(options: AppOptions) {
         await writeFile(path, file.buffer, { mode: 0o600 }); written.push(path);
       }
       transaction(db, () => {
+        requireLiveSession(db, req.cookies[sessionCookie], req.user!.id);
         for (const file of staged) db.prepare('INSERT INTO media VALUES (?, ?, ?, ?)').run(file.id, req.user!.id, kind, new Date().toISOString());
       });
     } catch (error) { await Promise.all(written.map(path => unlink(path).catch(() => {}))); throw error; }

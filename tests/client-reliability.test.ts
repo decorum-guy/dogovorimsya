@@ -117,3 +117,54 @@ test('history labels distinguish text edits from a rating change, including retu
   assert.deepEqual(lastRatingChange(history(49, [49, 50, 49])), { from: 50, to: 49 });
   assert.deepEqual(lastRatingChange(history(45, [40, 50, 45])), { from: 50, to: 45 });
 });
+
+test('isolated comment writes apply the returned journal without a second round trip', async () => {
+  const paths: string[] = [];
+  const { sync, changes } = setup(async (path, options) => {
+    paths.push(path);
+    if (path === '/api/bootstrap') return state('До комментария');
+    assert.equal(new Headers(options?.headers).get('Prefer'), 'return=representation');
+    return { ok: true, bootstrap: state('Комментарий уже в ленте') };
+  });
+  await sync.refresh();
+  await sync.save('/api/reviews/1/comments', json('POST', { body: '', photos: [{ id: 'fictional-photo', caption: 'Тест' }] }));
+  assert.deepEqual(paths, ['/api/bootstrap', '/api/reviews/1/comments']);
+  assert.equal(changes.at(-1)?.user.name, 'Комментарий уже в ленте');
+});
+
+test('overlapping comment snapshots cannot lose a write when network and commit orders differ', async () => {
+  const a = deferred<unknown>(), b = deferred<unknown>();
+  let reads = 0, writes = 0;
+  const { sync, changes } = setup(async path => {
+    if (path === '/api/bootstrap') return state(++reads === 1 ? 'Исходное' : 'Оба комментария подтверждены');
+    return ++writes === 1 ? a.promise : b.promise;
+  });
+  await sync.refresh();
+  const first = sync.save('/api/reviews/1/comments', json('POST', { body: 'A' }));
+  const second = sync.save('/api/reviews/1/comments', json('POST', { body: 'B' }));
+  a.resolve({ bootstrap: state('Снимок A') }); await first;
+  b.resolve({ bootstrap: state('Старый снимок B без A') }); await second;
+  assert.equal(changes.at(-1)?.user.name, 'Оба комментария подтверждены');
+  assert.equal(changes.some(value => value?.user.name === 'Старый снимок B без A'), false);
+});
+
+test('late inline comments from an old session cannot replace another profile', async () => {
+  const write = deferred<unknown>(); let user = state('Автор');
+  const { sync, changes } = setup(async path => path === '/api/bootstrap' ? user : write.promise);
+  await sync.refresh();
+  const pending = sync.save('/api/reviews/1/comments', json('POST', { body: 'Тест' }));
+  sync.reset(); user = state('Другой профиль', 2); await sync.refresh();
+  write.resolve({ bootstrap: state('Старый ответ автора') }); await pending;
+  assert.equal(changes.at(-1)?.user.id, 2);
+});
+
+test('manual refresh waits for pending writes and then fetches a fresh snapshot', async () => {
+  const write = deferred<unknown>(); let reads = 0;
+  const { sync } = setup(async path => path === '/api/bootstrap' ? (++reads, state()) : write.promise);
+  await sync.refresh();
+  const pending = sync.save('/api/reviews/1/favorite', json('PUT', { favorite: true }));
+  const refresh = sync.refreshAfterWrites();
+  await Promise.resolve(); assert.equal(reads, 1);
+  write.resolve({ ok: true }); await Promise.all([pending, refresh]);
+  assert.equal(reads, 3);
+});

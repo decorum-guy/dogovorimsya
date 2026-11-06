@@ -27,6 +27,11 @@ export class JournalSync {
       throw error;
     }
   }
+  async refreshAfterWrites() {
+    const scope = this.scope;
+    await Promise.allSettled([...scope.pending.values()]);
+    if (scope === this.scope) await this.refresh();
+  }
   save(path: string, options: RequestInit): Promise<void> {
     const scope = this.scope;
     const method = (options.method || 'GET').toUpperCase();
@@ -34,6 +39,7 @@ export class JournalSync {
     const existing = scope.pending.get(signature);
     if (existing) return existing;
     const needsReceipt = method === 'POST' && (path === '/api/reviews' || /^\/api\/reviews\/\d+\/comments$/.test(path));
+    const commentWrite = method === 'POST' && /^\/api\/reviews\/\d+\/comments$/.test(path) || method === 'PATCH' && /^\/api\/comments\/\d+$/.test(path);
     let requestOptions = options;
     if (needsReceipt) {
       if (!scope.retries.has(signature)) {
@@ -44,10 +50,27 @@ export class JournalSync {
       headers.set('Idempotency-Key', scope.retries.get(signature)!);
       requestOptions = { ...options, headers };
     }
-    scope.writes++; scope.read++;
+    if (commentWrite) {
+      const headers = new Headers(requestOptions.headers);
+      headers.set('Prefer', 'return=representation');
+      requestOptions = { ...requestOptions, headers };
+    }
+    const overlapped = scope.writes > 0;
+    scope.writes++;
+    const writeTicket = ++scope.read;
     const operation = (async () => {
-      let failure: unknown, failed = false;
-      try { await this.request(path, requestOptions); scope.retries.delete(signature); }
+      let failure: unknown, failed = false, snapshotApplied = false;
+      try {
+        const result = await this.request<{ bootstrap?: Bootstrap }>(path, requestOptions);
+        scope.retries.delete(signature);
+        const snapshot = result?.bootstrap;
+        // Only an isolated write may supply its own read. Overlapping responses
+        // can arrive in a different order than their commits on the server.
+        if (commentWrite && !overlapped && scope === this.scope && scope.writes === 1 && scope.read === writeTicket
+          && snapshot?.user?.id === scope.userId && Array.isArray(snapshot?.reviews) && Array.isArray(snapshot?.users) && snapshot?.statistics) {
+          this.changed(snapshot); this.syncIssue(''); snapshotApplied = true;
+        }
+      }
       catch (error) {
         failure = error; failed = true;
         if (error instanceof ApiError && error.status >= 400 && error.status < 500) scope.retries.delete(signature);
@@ -55,7 +78,7 @@ export class JournalSync {
       } finally { scope.writes--; }
       const rotated = !failed && path === '/api/profile/password' && scope === this.scope;
       if (rotated) this.reset();
-      if (rotated || scope === this.scope && !scope.writes) {
+      if (!snapshotApplied && (rotated || scope === this.scope && !scope.writes)) {
         try { await this.refresh(); }
         catch {
           if (rotated || scope === this.scope) this.syncIssue(failed ? 'Лента пока не обновилась. Когда связь вернётся, нажми «Обновить».' : 'Изменение сохранено. Лента пока не обновилась — нажми «Обновить», когда вернётся связь.');

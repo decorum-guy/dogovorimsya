@@ -129,6 +129,7 @@ export function openDatabase(directory: string) {
     if (!columns.some(column => column.name === 'registered_at')) db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT');
     const commentColumns = db.prepare('PRAGMA table_info(comments)').all();
     if (!commentColumns.some(column => column.name === 'revision')) db.exec('ALTER TABLE comments ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
+    if (!commentColumns.some(column => column.name === 'photos')) db.exec("ALTER TABLE comments ADD COLUMN photos TEXT NOT NULL DEFAULT '[]'");
     for (const table of ['reviews', 'revisions']) {
       if (db.prepare(`PRAGMA table_info(${table})`).all().some(column => column.name === 'event_time')) continue;
       db.exec(`ALTER TABLE ${table} ADD COLUMN event_time TEXT CHECK(event_time IS NULL OR event_time GLOB '[0-2][0-9]:[0-5][0-9]' AND event_time < '24:00')`);
@@ -147,7 +148,7 @@ export function openDatabase(directory: string) {
       ) WHERE registered_at IS NULL AND EXISTS (
         SELECT 1 FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
       );
-      PRAGMA user_version = 6;
+      PRAGMA user_version = 7;
     `);
   });
   return db;
@@ -188,6 +189,7 @@ export function getReviews(db: DB, userId: number): Review[] {
       id: Number(c.id), userId: Number(c.user_id), body: String(c.body),
       createdAt: String(c.created_at), updatedAt: String(c.updated_at),
       revision: Number(c.revision),
+      photos: JSON.parse(String(c.photos)),
     })),
     reactions: reactions.filter(v => v.review_id === r.id).map(v => ({ userId: Number(v.user_id), emoji: String(v.emoji) })),
     favorite: favorites.has(Number(r.id)),

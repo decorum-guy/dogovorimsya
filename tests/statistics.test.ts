@@ -62,7 +62,7 @@ test('v2 migration recovers the original signup date without changing accounts, 
     db.exec("INSERT INTO access_codes (id,code_hash,role,user_id,created_by,created_at) VALUES ('replacement','fictional-other-hash','recipient',2,1,'2026-11-08T00:00:00Z'); INSERT INTO sessions VALUES ('fictional-session',2,9999999999999);");
     db.exec("INSERT INTO reviews (id,author_id,rating,title,body,event_date,created_at,updated_at) VALUES (1,1,49,'Момент','Вымышленный отзыв','2026-11-01','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z'); INSERT INTO favorites VALUES (1,1),(1,2);");
     db.close(); db = openDatabase(directory);
-    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 6);
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 7);
     assert.equal(db.prepare('SELECT registered_at FROM users WHERE id = 2').get()!.registered_at, registered);
     assert.equal(db.prepare('SELECT registered_at FROM users WHERE id = 1').get()!.registered_at, null, 'unknown legacy dates must not be invented');
     assert.equal(db.prepare('SELECT password_hash FROM users WHERE id = 2').get()!.password_hash, 'fictional-hash-2');

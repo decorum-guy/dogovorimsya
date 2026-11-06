@@ -75,7 +75,7 @@ test('private two-person journal: permissions, history, uploads and sessions', a
       const bad = new FormData(); bad.set('kind', 'photo'); bad.append('photos', new Blob(['not an image']), 'fake.jpg');
       assert.equal((await request('/api/uploads', 'POST', bad)).status, 415);
       const denied = new FormData(); denied.set('kind', 'photo'); denied.append('photos', new Blob([new Uint8Array(bytes)]), 'test.jpg');
-      assert.equal((await request('/api/uploads', 'POST', denied, 'recipient')).status, 403);
+      assert.equal((await request('/api/uploads', 'POST', denied, 'recipient')).status, 201);
     });
     await t.test('edits preserve every snapshot, prevent stale overwrites and retain the style variant', async () => {
       const original = (await bootstrap()).reviews[0];

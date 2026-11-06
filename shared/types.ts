@@ -19,6 +19,10 @@ export interface Revision {
   createdAt: string;
   userId: number;
 }
+export interface CommentPhoto {
+  id: string;
+  caption: string;
+}
 export interface ReviewComment {
   id: number;
   userId: number;
@@ -26,6 +30,7 @@ export interface ReviewComment {
   createdAt: string;
   updatedAt: string;
   revision: number;
+  photos: CommentPhoto[];
 }
 export interface Review {
   id: number;

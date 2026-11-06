@@ -37,7 +37,7 @@ export function CoupleStatistics({ data }: { data: Bootstrap }) {
     { label: 'Совпали в избранном', value: stats.favorites.mutual, hint: 'два сердечка сказали «моё»', icon: Stars, color: 'rose' },
     { label: 'Сахарная передозировка', value: stats.perfectCount, hint: 'слипнуться и не расклеиваться', icon: Sparkles, color: 'gold' },
     { label: 'Аргументов в комментариях', value: stats.commentCount, hint: 'дипломатия или словесный файт', icon: MessageCircle, color: 'sage' },
-    { label: 'Фото в отзывах', value: stats.photoCount, hint: 'компромат с родными глазами', icon: Camera, color: 'plum' },
+    { label: 'Фото в вашей книжке', value: stats.photoCount, hint: 'моменты и улики из обсуждений', icon: Camera, color: 'plum' },
     { label: 'Оценок пересмотрено', value: stats.revisedRatingCount, hint: stats.raisedRatingCount ? `${stats.raisedRatingCount} ${plural(stats.raisedRatingCount, ['стала выше', 'стали выше', 'стали выше'])}` : 'история помнит все десятые', icon: History, color: 'sage' },
   ];
   const reactions = stats.reactions.reduce((sum, item) => sum + item.count, 0);

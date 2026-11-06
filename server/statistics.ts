@@ -15,6 +15,9 @@ export function getCoupleStatistics(db: DB): CoupleStatistics {
     for (const id of JSON.parse(String(review.photo_ids))) photos.add(id);
   }
   const favorites = { reviewer: 0, recipient: 0, mutual: 0 };
+  for (const comment of db.prepare('SELECT photos FROM comments').all()) {
+    for (const photo of JSON.parse(String(comment.photos))) photos.add(photo.id);
+  }
   for (const row of db.prepare('SELECT u.role, COUNT(*) AS n FROM favorites f JOIN users u ON u.id = f.user_id GROUP BY u.role').all()) {
     favorites[row.role as 'reviewer' | 'recipient'] = Number(row.n);
   }
