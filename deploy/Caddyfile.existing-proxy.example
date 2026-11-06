@@ -1,0 +1,6 @@
+# Append this site block to an existing Caddyfile after setting the real domain.
+# Use deploy/compose.proxy.yaml to make dogovorimsya-app reachable by Caddy.
+example.com {
+    encode zstd gzip
+    reverse_proxy dogovorimsya-app:3000
+}

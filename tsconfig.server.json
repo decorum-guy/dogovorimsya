@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "rootDir": ".",
+    "outDir": "build",
+    "noEmit": false,
+    "sourceMap": false
+  },
+  "include": ["server", "shared", "scripts/accounts.ts"]
+}

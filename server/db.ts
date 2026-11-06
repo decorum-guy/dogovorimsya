@@ -1,0 +1,132 @@
+import { DatabaseSync } from 'node:sqlite';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Review, Revision, User } from '../shared/types.js';
+
+export function openDatabase(directory: string) {
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  mkdirSync(join(directory, 'uploads'), { recursive: true, mode: 0o700 });
+  const db = new DatabaseSync(join(directory, 'app.db'));
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY,
+      login TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL UNIQUE CHECK(role IN ('reviewer', 'recipient')),
+      avatar_id TEXT REFERENCES media(id)
+    );
+    CREATE TABLE IF NOT EXISTS sessions (
+      token_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      expires_at INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS media (
+      id TEXT PRIMARY KEY,
+      owner_id INTEGER NOT NULL REFERENCES users(id),
+      kind TEXT NOT NULL CHECK(kind IN ('photo', 'avatar')),
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS reviews (
+      id INTEGER PRIMARY KEY,
+      author_id INTEGER NOT NULL REFERENCES users(id),
+      rating INTEGER NOT NULL CHECK(rating BETWEEN 0 AND 50),
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      photo_ids TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      revision INTEGER NOT NULL DEFAULT 1,
+      design_variant INTEGER NOT NULL DEFAULT 0 CHECK(design_variant BETWEEN 0 AND 4)
+    );
+    CREATE TABLE IF NOT EXISTS revisions (
+      id INTEGER PRIMARY KEY,
+      review_id INTEGER NOT NULL REFERENCES reviews(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      rating INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      event_date TEXT NOT NULL,
+      photo_ids TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS comments (
+      id INTEGER PRIMARY KEY,
+      review_id INTEGER NOT NULL REFERENCES reviews(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS reactions (
+      review_id INTEGER NOT NULL REFERENCES reviews(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      emoji TEXT NOT NULL,
+      PRIMARY KEY(review_id, user_id, emoji)
+    );
+    CREATE TABLE IF NOT EXISTS favorites (
+      review_id INTEGER NOT NULL REFERENCES reviews(id),
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      PRIMARY KEY(review_id, user_id)
+    );
+    CREATE TABLE IF NOT EXISTS access_codes (
+      id TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL UNIQUE,
+      role TEXT NOT NULL CHECK(role IN ('reviewer', 'recipient')),
+      user_id INTEGER REFERENCES users(id),
+      created_by INTEGER NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      claimed_at TEXT,
+      last_used_at TEXT,
+      revoked_at TEXT,
+      expires_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS revisions_review ON revisions(review_id);
+    CREATE INDEX IF NOT EXISTS comments_review ON comments(review_id);
+    PRAGMA user_version = 2;
+  `);
+  return db;
+}
+
+export type DB = ReturnType<typeof openDatabase>;
+export type Row = Record<string, unknown>;
+export const publicUser = (row: Row): User => ({
+  id: Number(row.id), name: String(row.name), role: row.role as User['role'],
+  avatarId: row.avatar_id as string | null,
+});
+export function getUsers(db: DB): User[] {
+  return db.prepare('SELECT id, name, role, avatar_id FROM users ORDER BY id').all().map(publicUser);
+}
+export function transaction<T>(db: DB, fn: () => T): T {
+  db.exec('BEGIN IMMEDIATE');
+  try { const result = fn(); db.exec('COMMIT'); return result; }
+  catch (error) { db.exec('ROLLBACK'); throw error; }
+}
+export function getReviews(db: DB, userId: number): Review[] {
+  const revisions = db.prepare('SELECT * FROM revisions ORDER BY id').all();
+  const comments = db.prepare('SELECT * FROM comments ORDER BY id').all();
+  const reactions = db.prepare('SELECT * FROM reactions').all();
+  const favorites = new Set(db.prepare('SELECT review_id FROM favorites WHERE user_id = ?').all(userId).map(r => Number(r.review_id)));
+  return db.prepare('SELECT * FROM reviews ORDER BY event_date DESC, id DESC').all().map(r => ({
+    id: Number(r.id), authorId: Number(r.author_id), rating: Number(r.rating),
+    title: String(r.title), body: String(r.body), eventDate: String(r.event_date),
+    photoIds: JSON.parse(String(r.photo_ids)), createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at), revision: Number(r.revision), designVariant: Number(r.design_variant),
+    revisions: revisions.filter(v => v.review_id === r.id).map((v): Revision => ({
+      id: Number(v.id), userId: Number(v.user_id), rating: Number(v.rating),
+      title: String(v.title), body: String(v.body), eventDate: String(v.event_date),
+      photoIds: JSON.parse(String(v.photo_ids)), note: String(v.note), createdAt: String(v.created_at),
+    })),
+    comments: comments.filter(c => c.review_id === r.id).map(c => ({
+      id: Number(c.id), userId: Number(c.user_id), body: String(c.body),
+      createdAt: String(c.created_at), updatedAt: String(c.updated_at),
+    })),
+    reactions: reactions.filter(v => v.review_id === r.id).map(v => ({ userId: Number(v.user_id), emoji: String(v.emoji) })),
+    favorite: favorites.has(Number(r.id)),
+  }));
+}
