@@ -12,14 +12,24 @@ function storage() {
 const normalize = (value: string) => value.normalize('NFKC').toLowerCase().replaceAll('ё', 'е').replace(/[^\p{L}\p{N}]/gu, '');
 
 test('large role pools are unique, short and preserve every original phrase verbatim', () => {
-  assert.equal(messages.version, 2); assert.equal(messages.locale, 'ru-RU');
+  assert.equal(messages.version, 3); assert.equal(messages.locale, 'ru-RU');
   const originals = {
     reviewer: '2995a1bfc89ca7eedcbc5d3655218a3249f48589d6816467badd2304da266f80',
     recipient: '5258a14b041f520ad65e69155a9dfa37957278baa83c61d7b582db8ae90732db',
   };
+  const previousPools = {
+    reviewer: '86ed9b62af47b99e80ecdf60d0de211395529ea05b41c189676f3df720ad00d5',
+    recipient: 'd1d2fbbf80c11bf7a0a63dfac59d37120382c7fb04148ff3c5b81a7d8997d0ec',
+  };
+  const explicit = /пизд|бля|оху|нахуй|хуйн|заеб|разъеб|про[её]б|наеб|съеб|[её]бан|[её]бну/i;
   for (const role of ['reviewer', 'recipient'] as const) {
-    assert.ok(messages[role].length >= 300);
-    assert.ok(messages[role].filter(phrase => /пизд|бляд|оху|наеб/i.test(phrase)).length >= 6, `both profiles keep their pepper: ${role}`);
+    assert.equal(messages[role].length, 380);
+    assert.equal(messages[role].filter(phrase => explicit.test(phrase)).length, 86, `both profiles get the same amount of pepper: ${role}`);
+    const previousHash = createHash('sha256').update(JSON.stringify(messages[role].slice(0, 300))).digest('hex');
+    assert.equal(previousHash, previousPools[role], 'every previous greeting stays verbatim and in order');
+    const additions = messages[role].slice(300);
+    assert.equal(additions.length, 80);
+    for (const phrase of additions) assert.ok(explicit.test(phrase), `each new phrase contains explicit profanity: ${phrase}`);
     const originalHash = createHash('sha256').update(JSON.stringify(messages[role].slice(0, 26))).digest('hex');
     assert.equal(originalHash, originals[role]);
     for (const phrase of messages[role]) { assert.equal(phrase, phrase.trim()); assert.ok(phrase.length > 0 && phrase.length <= 85, phrase); }
