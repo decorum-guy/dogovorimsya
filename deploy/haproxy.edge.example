@@ -17,7 +17,7 @@ frontend shared_http
     bind :80
     mode http
     timeout http-request 15s
-    use_backend journal_http if { hdr(host),lower,field(1,:) -m str dogovorimsya.online }
+    use_backend journal_http if { hdr(host),lower,field(1,:) -m str dogovorimsya.online www.dogovorimsya.online }
     default_backend existing_http
 
 backend existing_http
@@ -28,7 +28,7 @@ frontend shared_https
     bind :443
     tcp-request inspect-delay 5s
     tcp-request content accept if { req.ssl_hello_type 1 }
-    use_backend journal_https if { req.ssl_sni -i dogovorimsya.online }
+    use_backend journal_https if { req.ssl_sni -i dogovorimsya.online www.dogovorimsya.online }
     default_backend existing_https
 
 backend existing_https

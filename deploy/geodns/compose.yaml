@@ -1,0 +1,28 @@
+name: dogovorimsya-dns
+
+services:
+  auth:
+    image: powerdns/pdns-auth-51@sha256:77ff4efdbb9ec30e9309c8a1cbed6121a67fa3be25c848bbbfa756fc75bf9a27
+    entrypoint: /usr/local/sbin/pdns_server
+    command: ["--config-dir=/etc/dogovorimsya-dns"]
+    user: "1000:1000"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.25
+    pids_limit: 64
+    ports:
+      - "${DNS_BIND_ADDRESS:?Set the server IPv4 address}:53:1053/udp"
+      - "${DNS_BIND_ADDRESS:?Set the server IPv4 address}:53:1053/tcp"
+    volumes:
+      - ./config:/etc/dogovorimsya-dns:ro
+    tmpfs:
+      - /run/dogovorimsya-dns:rw,noexec,nosuid,size=1m,uid=1000,gid=1000
+    healthcheck:
+      test: ["CMD", "pdns_control", "--socket-dir=/run/dogovorimsya-dns", "rping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -13,3 +13,7 @@ data/
 .DS_Store
 coverage/
 artifacts/
+deploy/geodns/config/
+*.mmdb
+*.mmdb.gz
+__pycache__/
