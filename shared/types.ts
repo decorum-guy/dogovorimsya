@@ -5,6 +5,7 @@ export interface User {
   id: number;
   name: string;
   role: Role;
+  isAdmin: boolean;
   avatarId: string | null;
 }
 export interface Revision {
@@ -35,6 +36,7 @@ export interface ReviewComment {
 export interface Review {
   id: number;
   authorId: number;
+  recipientId: number | null;
   rating: number;
   title: string;
   body: string;
@@ -68,6 +70,15 @@ export interface CoupleStatistics {
   raisedRatingCount: number;
   favorites: { reviewer: number; recipient: number; mutual: number };
   reactions: { emoji: string; count: number }[];
+  ratingDistribution: Record<Tone, number>;
+  participants: ParticipantStatistics[];
+}
+export interface ParticipantStatistics {
+  userId: number;
+  receivedCount: number;
+  sentCount: number;
+  averageRating: number | null;
+  perfectCount: number;
   ratingDistribution: Record<Tone, number>;
 }
 export interface ReviewInput {

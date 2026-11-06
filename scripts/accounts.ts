@@ -40,7 +40,7 @@ try {
     const hash = await hashPassword(randomBytes(64).toString('base64url'));
     const now = new Date().toISOString();
     transaction(db, () => {
-      const id = Number(db.prepare("INSERT INTO users (login, password_hash, name, role, registered_at) VALUES ('owner', ?, 'Автор', 'reviewer', ?)").run(hash, now).lastInsertRowid);
+      const id = Number(db.prepare("INSERT INTO users (login, password_hash, name, role, registered_at, is_admin) VALUES ('owner', ?, 'Автор', 'reviewer', ?, 1)").run(hash, now).lastInsertRowid);
       db.prepare("INSERT INTO access_codes (id, code_hash, role, user_id, created_by, created_at) VALUES (?, ?, 'reviewer', ?, ?, ?)").run(randomUUID(), secret.hash, id, id, now);
     });
     // The secret is emitted once, only to the invoking SSH/terminal session.
@@ -65,7 +65,7 @@ try {
       if (!/^[a-z0-9_.-]{3,40}$/.test(login) || !name || name.length > 50) throw new Error('Логин: 3–40 латинских букв/цифр, точка, дефис, подчёркивание. Имя: 1–50 символов.');
       accounts.push({ role, login, name, hash: await password() });
     }
-    transaction(db, () => { for (const a of accounts) db.prepare('INSERT INTO users (login, password_hash, name, role, registered_at) VALUES (?, ?, ?, ?, ?)').run(a.login, a.hash, a.name, a.role, new Date().toISOString()); });
+    transaction(db, () => { for (const a of accounts) db.prepare('INSERT INTO users (login, password_hash, name, role, registered_at, is_admin) VALUES (?, ?, ?, ?, ?, 1)').run(a.login, a.hash, a.name, a.role, new Date().toISOString()); });
     console.log('\nАккаунт администратора создан. Войди и выдай приглашение в разделе «Доступ».');
   } else throw new Error('Использование: npm run accounts [-- bootstrap|reset reviewer|recipient]');
 } catch (error) { console.error(error instanceof Error ? error.message : 'Ошибка'); process.exitCode = 1; }

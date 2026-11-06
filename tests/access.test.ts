@@ -15,6 +15,7 @@ test('invitation and recovery codes are private, single-account and revocable', 
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
   options.origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   db.prepare("INSERT INTO users (id, login, password_hash, name, role) VALUES (1, 'test-owner', ?, 'Тестовый автор', 'reviewer')").run(await hashPassword('fictional-owner-password'));
+  db.exec('UPDATE users SET is_admin = 1 WHERE id = 1');
   const cookies: Record<string, string> = {};
   const request = async (path: string, method = 'GET', body?: unknown, who = 'owner', origin = options.origin) => fetch(options.origin + path, { method, headers: { 'Content-Type': 'application/json', Origin: origin, ...(cookies[who] ? { Cookie: cookies[who] } : {}) }, body: body ? JSON.stringify(body) : undefined });
   const remember = (who: string, response: Response) => { cookies[who] = response.headers.get('set-cookie')!.split(';')[0]; };

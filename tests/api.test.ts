@@ -47,8 +47,8 @@ test('private two-person journal: permissions, history, uploads and sessions', a
       assert.equal(JSON.stringify(state).includes('password_hash'), false);
       assert.equal(state.reviews.length, 0);
     });
-    await t.test('only the author can create a valid review; forged roles and CSRF fail', async () => {
-      assert.equal((await request('/api/reviews', 'POST', { ...initial, role: 'reviewer' }, 'recipient')).status, 403);
+    await t.test('creating reviews requires authentication, valid input and the correct origin', async () => {
+      assert.equal((await request('/api/reviews', 'POST', { ...initial, role: 'reviewer' }, 'anonymous')).status, 401);
       assert.equal((await request('/api/reviews', 'POST', initial, 'reviewer', 'https://untrusted.example')).status, 403);
       for (const rating of [-1, 51, 4.9]) assert.equal((await request('/api/reviews', 'POST', { ...initial, rating })).status, 400);
       assert.equal((await request('/api/reviews', 'POST', { ...initial, eventDate: '2026-02-30' })).status, 400);

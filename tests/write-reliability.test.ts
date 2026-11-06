@@ -38,7 +38,7 @@ test('write receipts prevent duplicate reviews/comments and explicit reaction st
       assert.equal(db.prepare('SELECT COUNT(*) AS n FROM revisions').get()!.n, 1);
       assert.equal((await request('/api/reviews', 'POST', { ...review, rating: 10 }, 'reviewer', key)).status, 409);
       assert.equal((await request(`/api/reviews/${id}/comments`, 'POST', { body: 'Другой тип запроса' }, 'reviewer', key)).status, 409);
-      assert.equal((await request('/api/reviews', 'POST', review, 'recipient', key)).status, 403);
+      assert.equal((await request(`/api/reviews/${id}`, 'PATCH', { ...review, revision: 1 }, 'recipient')).status, 403);
     });
     await t.test('comment receipts are private to a user and reject changed content under an old key', async () => {
       const key = randomUUID(), path = `/api/reviews/${id}/comments`, body = { body: 'Первый тестовый ответ' };

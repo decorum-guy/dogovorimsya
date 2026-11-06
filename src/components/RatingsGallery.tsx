@@ -20,7 +20,7 @@ export function RatingsGallery() {
     {groups.map(example => <section className={`gallery-section gallery-${example.tone}`} key={example.tone}>
       <div className="gallery-intro"><div><p className="eyebrow">НАСТРОЕНИЕ ЗАДАЁТ БАЛЛ. ДЕТАЛИ СКЛАДЫВАЮТСЯ САМИ.</p><h1><span>{(example.rating / 10).toFixed(1)}</span> {toneNames[example.tone]}<i>{example.tone === 'inferno' ? <Flame/> : <Sparkles/>}</i></h1><p>{example.subtitle}</p></div><span className="gallery-five">та же книжка.<br/><strong>каждый лист — свой.</strong></span></div>
       <div className="specimen-grid">{Array.from({ length: 5 }, (_, variant) => {
-        const review: Review = { id: variant + 1, authorId: 1, rating: example.rating, title: example.title, body: example.body, eventDate: '2026-11-06', eventTime: '14:30', photoIds: [], createdAt: '', updatedAt: '', revision: 1, designVariant: variant, revisions: [], comments: [], reactions: [], favorite: false };
+        const review: Review = { id: variant + 1, authorId: 1, recipientId: 2, rating: example.rating, title: example.title, body: example.body, eventDate: '2026-11-06', eventTime: '14:30', photoIds: [], createdAt: '', updatedAt: '', revision: 1, designVariant: variant, revisions: [], comments: [], reactions: [], favorite: false };
         return <div className="specimen-wrap" key={variant}><span className="specimen-label">ЛИСТ 0{variant + 1} · ДЕТАЛИ СЛОЖИЛИСЬ САМИ</span><ReviewCard review={review} specimen/></div>;
       })}<div className="gallery-end"><Heart size={28}/><p>Оцениваем моменты.<br/><em>Любим без оценок.</em></p><span>Скотч, сердечки и маленькие несовпадения.<br/>Каждый отзыв получает их автоматически.</span></div></div>
     </section>)}

@@ -23,7 +23,7 @@ test('v5 time migration restores actual publication clocks, preserves all old co
     db.exec('INSERT INTO favorites VALUES (1,1);');
     const before = new Map(['users', 'sessions', 'reviews', 'revisions', 'favorites'].map(table => [table, db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(row => ({ ...row }))]));
     db.close(); db = openDatabase(directory);
-    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 7);
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 8);
     for (const [table, previous] of before) {
       const current = db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all().map(({ event_time, ...row }) => row);
       assert.deepEqual(current, previous, `all previous ${table} values must survive`);

@@ -48,8 +48,13 @@ export function createNotifications(db: DB, options: { dataDir: string; origin: 
   function enqueue(kind: NotificationKind, actorId: number, reviewId: number) {
     if (!available) return;
     const now = Date.now();
+    const review = db.prepare('SELECT author_id, recipient_id FROM reviews WHERE id = ?').get(reviewId);
+    if (!review) return;
+    const targetId = kind === 'review_created' || kind === 'rating_changed' ? review.recipient_id
+      : review.author_id === actorId ? review.recipient_id : review.recipient_id === actorId ? review.author_id : null;
+    if (targetId === null || targetId === actorId) return;
     const targets = db.prepare(`SELECT p.endpoint, p.user_id FROM push_subscriptions p JOIN sessions s ON s.token_hash = p.session_hash
-      WHERE p.user_id != ? AND s.expires_at > ?`).all(actorId, now);
+      WHERE p.user_id = ? AND s.expires_at > ?`).all(Number(targetId), now);
     for (const target of targets) {
       if (!allowed(preferences(Number(target.user_id)), kind, now)) continue;
       db.prepare('INSERT INTO push_outbox (id, endpoint, user_id, kind, review_id, created_at, next_attempt) VALUES (?, ?, ?, ?, ?, ?, ?)')

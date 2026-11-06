@@ -11,6 +11,7 @@ export async function seedDemo(db: DB) {
   const registeredAt = new Date(Date.now() - 6 * 86_400_000).toISOString();
   if (db.prepare('SELECT 1 FROM users').get()) {
     db.prepare('UPDATE users SET registered_at = ? WHERE registered_at IS NULL').run(registeredAt);
+    seedReturnReviews(db);
     return;
   }
   const password = await hashPassword(randomBytes(32).toString('hex'));
@@ -28,7 +29,7 @@ export async function seedDemo(db: DB) {
   </svg>`;
   await writeFile(join(directory, 'uploads', `${imageId}.webp`), await sharp(Buffer.from(coffee)).webp({ quality: 90 }).toBuffer(), { mode: 0o600 });
   transaction(db, () => {
-    db.prepare('INSERT INTO users (id, login, password_hash, name, role, registered_at) VALUES (1, ?, ?, ?, ?, ?)').run('demo-author', password, 'Он', 'reviewer', registeredAt);
+    db.prepare('INSERT INTO users (id, login, password_hash, name, role, registered_at, is_admin) VALUES (1, ?, ?, ?, ?, ?, 1)').run('demo-author', password, 'Он', 'reviewer', registeredAt);
     db.prepare('INSERT INTO users (id, login, password_hash, name, role, registered_at) VALUES (2, ?, ?, ?, ?, ?)').run('demo-recipient', password, 'Она', 'recipient', registeredAt);
     db.prepare('INSERT INTO media VALUES (?, 1, ?, ?)').run(imageId, 'photo', new Date().toISOString());
     const fixtures = [
@@ -42,7 +43,7 @@ export async function seedDemo(db: DB) {
     for (const f of fixtures) {
       const date = new Date(); date.setDate(date.getDate() - f.day);
       const stamp = date.toISOString(), event = journalDate(date), time = journalTime(date), photos = JSON.stringify(f.photos);
-      const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, event_time, photo_ids, created_at, updated_at, revision) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(f.rating, f.title, f.body, event, time, photos, stamp, stamp, f.original ? 2 : 1);
+      const result = db.prepare('INSERT INTO reviews (author_id, recipient_id, rating, title, body, event_date, event_time, photo_ids, created_at, updated_at, revision) VALUES (1, 2, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(f.rating, f.title, f.body, event, time, photos, stamp, stamp, f.original ? 2 : 1);
       const id = Number(result.lastInsertRowid);
       db.prepare('UPDATE reviews SET design_variant = ? WHERE id = ?').run((id - 1) % 5, id);
       db.prepare('INSERT INTO revisions (review_id, user_id, rating, title, body, event_date, event_time, photo_ids, note, created_at) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?)').run(id, f.original || f.rating, f.title, f.body, event, time, photos, '', stamp);
@@ -52,5 +53,23 @@ export async function seedDemo(db: DB) {
     db.prepare('INSERT INTO comments (review_id, user_id, body, created_at, updated_at) VALUES (2, 2, ?, ?, ?)').run('Это были очень красивые пять минут 😌', now, now);
     db.prepare("INSERT INTO reactions VALUES (1, 2, '❤️'), (2, 1, '😂'), (3, 2, '🔥'), (4, 2, '❤️')").run();
     db.prepare('INSERT INTO favorites VALUES (1, 1), (4, 1), (1, 2), (2, 2), (4, 2)').run();
+  });
+  seedReturnReviews(db);
+}
+
+// Idempotent, fictional reverse-direction examples for the local preview only.
+function seedReturnReviews(db: DB) {
+  const author = db.prepare("SELECT id FROM users WHERE role = 'recipient'").get();
+  const recipient = db.prepare("SELECT id FROM users WHERE role = 'reviewer'").get();
+  if (!author || !recipient || db.prepare('SELECT id FROM reviews WHERE author_id = ?').get(Number(author.id))) return;
+  transaction(db, () => {
+    for (const [rating, title, body] of [
+      [50, 'Обнимашки космического масштаба', 'Ты принёс чай, укутал меня и выключил весь остальной мир. Пять. Без торгов. Моя сладкая катастрофа ♡'],
+      [10, 'Кто сожрал мою последнюю печеньку?', 'Улики на твоей футболке. Комиссия в ахуе. Приговор: немедленно купить печенье и явиться на обнимашки.'],
+    ] as const) {
+      const now = new Date(), stamp = now.toISOString(), date = journalDate(now), time = journalTime(now);
+      const id = Number(db.prepare("INSERT INTO reviews (author_id,recipient_id,rating,title,body,event_date,event_time,photo_ids,created_at,updated_at,design_variant) VALUES (?,?,?,?,?,?,?,'[]',?,?,2)").run(Number(author.id), Number(recipient.id), rating, title, body, date, time, stamp, stamp).lastInsertRowid);
+      db.prepare("INSERT INTO revisions (review_id,user_id,rating,title,body,event_date,event_time,photo_ids,created_at) VALUES (?,?,?,?,?,?,?,'[]',?)").run(id,Number(author.id),rating,title,body,date,time,stamp);
+    }
   });
 }

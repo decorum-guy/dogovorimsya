@@ -81,10 +81,6 @@ export function createApp(options: AppOptions) {
     if (!req.user) throw new HttpError(401, 'Нужно войти в вашу историю.');
     next();
   };
-  const reviewer = (req: Request, _res: Response, next: NextFunction) => {
-    if (req.user?.role !== 'reviewer') throw new HttpError(403, 'Оценки может менять только их автор.');
-    next();
-  };
   const findReview = (value: unknown) => {
     const id = idSchema.parse(value);
     const row = db.prepare('SELECT * FROM reviews WHERE id = ?').get(id);
@@ -141,18 +137,19 @@ export function createApp(options: AppOptions) {
   };
   notifications.install(app, authenticated);
   installAccessRoutes(app, db, options.secure, authenticated, (req, _res, next) => {
-    if (req.user?.role !== 'reviewer') throw new HttpError(403, 'Коды доступа может выдавать только администратор.');
+    if (!req.user?.isAdmin) throw new HttpError(403, 'Коды доступа может выдавать только администратор.');
     next();
   });
-  app.post('/api/reviews', authenticated, reviewer, (req, res) => {
+  app.post('/api/reviews', authenticated, (req, res) => {
     // Accept dates from older clients, but stamp new notes at publication.
     const input = reviewSchema.partial({ eventDate: true }).parse(req.body);
     checkPhotos(input.photoIds, req.user!);
     const result = transaction(db, () => once(db, req.user!.id, req.get('Idempotency-Key'), req.path, input, () => {
       const published = new Date(), now = published.toISOString();
       const data = { ...input, eventDate: journalDate(published), eventTime: journalTime(published) };
-      const result = db.prepare('INSERT INTO reviews (author_id, rating, title, body, event_date, event_time, photo_ids, created_at, updated_at, design_variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(req.user!.id, data.rating, data.title, data.body, data.eventDate, data.eventTime, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
+      const recipient = db.prepare('SELECT id FROM users WHERE id <> ? ORDER BY id LIMIT 1').get(req.user!.id);
+      const result = db.prepare('INSERT INTO reviews (author_id, recipient_id, rating, title, body, event_date, event_time, photo_ids, created_at, updated_at, design_variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(req.user!.id, recipient ? Number(recipient.id) : null, data.rating, data.title, data.body, data.eventDate, data.eventTime, JSON.stringify(data.photoIds), now, now, Math.floor(Math.random() * 5));
       const id = Number(result.lastInsertRowid);
       insertRevision(id, req.user!.id, data, now);
       notifications.enqueue('review_created', req.user!.id, id);
@@ -160,14 +157,14 @@ export function createApp(options: AppOptions) {
     }));
     res.status(201).json(result);
   });
-  app.patch('/api/reviews/:id', authenticated, reviewer, (req, res) => {
+  app.patch('/api/reviews/:id', authenticated, (req, res) => {
     const input = reviewSchema.extend({ revision: z.number().int().positive() }).parse(req.body);
-    checkPhotos(input.photoIds, req.user!);
     transaction(db, () => {
       const row = findReview(req.params.id);
       // Date-only clients keep the saved clock rather than erasing it.
       const data = { ...input, eventTime: input.eventTime ?? row.event_time as string | null };
       if (row.author_id !== req.user!.id) throw new HttpError(403, 'Этот отзыв может изменить только его автор.');
+      checkPhotos(input.photoIds, req.user!);
       if (row.revision !== data.revision) throw new HttpError(409, 'Отзыв уже изменён в другом окне. Закрой редактор и обнови ленту.');
       const lastNote = db.prepare('SELECT note FROM revisions WHERE review_id = ? ORDER BY id DESC LIMIT 1').get(Number(row.id))?.note;
       if (row.rating === data.rating && row.title === data.title && row.body === data.body && row.event_date === data.eventDate && row.event_time === data.eventTime && row.photo_ids === JSON.stringify(data.photoIds) && (!data.note || data.note === lastNote)) return;

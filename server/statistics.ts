@@ -4,7 +4,7 @@ import type { DB } from './db.js';
 
 export function getCoupleStatistics(db: DB): CoupleStatistics {
   const started = db.prepare("SELECT registered_at FROM users WHERE role = 'recipient'").get();
-  const reviews = db.prepare('SELECT rating, photo_ids FROM reviews').all();
+  const reviews = db.prepare('SELECT author_id, recipient_id, rating, photo_ids FROM reviews').all();
   const distribution: CoupleStatistics['ratingDistribution'] = { gold: 0, rose: 0, paper: 0, ember: 0, inferno: 0 };
   const photos = new Set<string>();
   let sum = 0;
@@ -39,5 +39,16 @@ export function getCoupleStatistics(db: DB): CoupleStatistics {
     favorites,
     reactions: db.prepare('SELECT emoji, COUNT(*) AS n FROM reactions GROUP BY emoji ORDER BY emoji').all().map(row => ({ emoji: String(row.emoji), count: Number(row.n) })),
     ratingDistribution: distribution,
+    participants: db.prepare('SELECT id FROM users ORDER BY id').all().map(user => {
+      const received = reviews.filter(review => review.recipient_id === user.id);
+      const ratingDistribution = { gold: 0, rose: 0, paper: 0, ember: 0, inferno: 0 };
+      for (const review of received) ratingDistribution[getTone(Number(review.rating))]++;
+      return {
+        userId: Number(user.id), receivedCount: received.length,
+        sentCount: reviews.filter(review => review.author_id === user.id).length,
+        averageRating: received.length ? received.reduce((sum, review) => sum + Number(review.rating), 0) / received.length / 10 : null,
+        perfectCount: ratingDistribution.gold, ratingDistribution,
+      };
+    }),
   };
 }

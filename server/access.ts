@@ -4,7 +4,7 @@ import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 import { createSession, hashPassword, requireLiveSession, sessionCookie } from './auth.js';
 import { hashAccessCode, makeAccessCode } from './codes.js';
-import { publicUser, transaction, type DB } from './db.js';
+import { assignPendingRecipients, publicUser, transaction, type DB } from './db.js';
 import { HttpError } from './errors.js';
 import { loginExpression } from '../shared/account-validation.js';
 
@@ -28,6 +28,7 @@ export function installAccessRoutes(app: Express, db: DB, secure: boolean, authe
       if (db.prepare('SELECT id FROM users WHERE login = ?').get(input.login)) throw new HttpError(409, 'Этот логин уже занят. Придумай другой.');
       const now = new Date().toISOString();
       const id = Number(db.prepare('INSERT INTO users (login, password_hash, name, role, registered_at) VALUES (?, ?, ?, ?, ?)').run(input.login, hash, input.name, String(code.role), now).lastInsertRowid);
+      assignPendingRecipients(db);
       db.prepare('UPDATE access_codes SET user_id = ?, claimed_at = ?, last_used_at = ?, expires_at = NULL WHERE id = ?').run(id, now, now, String(code.id));
       db.prepare('UPDATE access_codes SET revoked_at = ? WHERE role = ? AND user_id IS NULL AND revoked_at IS NULL').run(now, String(code.role));
       createSession(db, res, id, secure);
@@ -53,7 +54,7 @@ export function installAccessRoutes(app: Express, db: DB, secure: boolean, authe
     res.json({ user });
   });
   app.get('/api/admin/access', authenticated, admin, (_req, res) => {
-    const users = db.prepare('SELECT id, name, login, role FROM users ORDER BY id').all();
+    const users = db.prepare('SELECT id, name, login, role, is_admin FROM users ORDER BY id').all().map(user => ({ id: user.id, name: user.name, login: user.login, role: user.role, isAdmin: Boolean(user.is_admin) }));
     const codes = db.prepare('SELECT id, role, user_id, created_at, claimed_at, last_used_at, revoked_at, expires_at FROM access_codes ORDER BY created_at DESC LIMIT 100').all().map(c => ({
       id: c.id, role: c.role, userId: c.user_id, createdAt: c.created_at, claimedAt: c.claimed_at,
       lastUsedAt: c.last_used_at, revokedAt: c.revoked_at, expiresAt: c.expires_at,

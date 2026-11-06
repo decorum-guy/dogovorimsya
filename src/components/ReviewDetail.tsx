@@ -5,6 +5,7 @@ import type { Save } from '../App';
 import { json } from '../lib/api';
 import { Modal, Avatar, Stars, mediaUrl, dateLabel, noteDateLabel, score } from './ui';
 import { getTone } from '../lib/ratings';
+import { ReviewDirection } from './ReviewDirection';
 import { useDraftGuard } from '../lib/use-draft-guard';
 import { useCommentUpdates } from '../lib/use-comment-updates';
 import { lastRatingChange } from '../../shared/review-history';
@@ -48,12 +49,13 @@ export function ReviewDetail({ review: r, data, save, refresh, onClose, onEdit }
         </div>}
       </div>}
       <div className="review-detail-content" hidden={photo !== null}>
+        <ReviewDirection review={r} author={data.users.find(user => user.id === r.authorId)} recipient={data.users.find(user => user.id === r.recipientId)} currentUserId={data.user.id}/>
         <div className={'detail-rating tone-' + getTone(r.rating)}>
           <div><strong>{score(r.rating)}</strong><Stars rating={r.rating}/></div>
           {r.revisions.length > 1 && <button onClick={() => setTab('history')}><History size={14}/>
             {ratingChange ? <><s>{score(ratingChange.from)}</s><ArrowRight size={12}/>{score(ratingChange.to)} · изменено</> : <>Запись обновлена</>}
           </button>}
-          {data.user.role === 'reviewer' && <button className="secondary-button" disabled={busy} onClick={() => {
+          {r.authorId === data.user.id && <button className="secondary-button" disabled={busy} onClick={() => {
             if (!dirty || window.confirm('В обсуждении остались несохранённые текст или фото. Перейти к редактированию отзыва и потерять их?')) onEdit();
           }}><PencilLine size={15}/>Изменить</button>}
         </div>

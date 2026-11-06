@@ -53,9 +53,9 @@ test('comment photos, captions, ownership, retries and live revision checks', as
     const response = await request('/api/reviews', 'POST', { rating: 50, title: 'Вымышленная записка', body: 'Тестовые данные.', photoIds: [] }, 'reviewer');
     reviewId = (await response.json()).id;
     const path = '/api/reviews/' + reviewId + '/comments';
-    await t.test('both profiles can upload; attaching a photo does not grant review-edit rights', async () => {
+    await t.test('both profiles can upload; attaching a photo does not grant access to a foreign review', async () => {
       recipientPhoto = await upload('recipient'); authorPhoto = await upload('reviewer');
-      assert.equal((await request('/api/reviews', 'POST', { rating: 50, title: 'Недоступно', body: 'Тест.', photoIds: [recipientPhoto] })).status, 403);
+      assert.equal((await request('/api/admin/access')).status, 403);
       assert.equal((await request('/api/reviews/' + reviewId, 'PATCH', { rating: 50, title: 'Недоступно', body: 'Тест.', eventDate: '2026-11-06', photoIds: [recipientPhoto], revision: 1 })).status, 403);
       assert.equal((await request('/media/' + recipientPhoto, 'GET', undefined, 'anonymous')).status, 401);
       assert.equal((await request('/media/' + recipientPhoto)).headers.get('cache-control'), 'no-store');
@@ -149,7 +149,7 @@ test('v6 migration keeps old comments, clocks, sessions and revisions; repeated 
     db.exec('ALTER TABLE comments DROP COLUMN photos; PRAGMA user_version = 6;');
     const before = ['users', 'sessions', 'reviews', 'comments'].map(table => [table, db.prepare('SELECT * FROM ' + table).all().map(row => ({ ...row }))] as const);
     db.close(); db = openDatabase(directory);
-    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 7);
+    assert.equal(db.prepare('PRAGMA user_version').get()!.user_version, 8);
     for (const [table, rows] of before) {
       const current = db.prepare('SELECT * FROM ' + table).all().map(({ photos, ...row }) => row);
       assert.deepEqual(current, rows, table + ' must keep all original values');

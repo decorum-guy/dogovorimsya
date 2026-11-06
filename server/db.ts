@@ -127,6 +127,14 @@ export function openDatabase(directory: string) {
   transaction(db, () => {
     const columns = db.prepare('PRAGMA table_info(users)').all();
     if (!columns.some(column => column.name === 'registered_at')) db.exec('ALTER TABLE users ADD COLUMN registered_at TEXT');
+    // Grant the old owner's admin rights once; role no longer confers authority.
+    if (!columns.some(column => column.name === 'is_admin')) {
+      db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0 CHECK(is_admin IN (0, 1)); UPDATE users SET is_admin = 1 WHERE role = 'reviewer';");
+    }
+    if (!db.prepare('PRAGMA table_info(reviews)').all().some(column => column.name === 'recipient_id')) {
+      db.exec('ALTER TABLE reviews ADD COLUMN recipient_id INTEGER REFERENCES users(id) CHECK(recipient_id IS NULL OR recipient_id <> author_id)');
+    }
+    assignPendingRecipients(db);
     const commentColumns = db.prepare('PRAGMA table_info(comments)').all();
     if (!commentColumns.some(column => column.name === 'revision')) db.exec('ALTER TABLE comments ADD COLUMN revision INTEGER NOT NULL DEFAULT 1');
     if (!commentColumns.some(column => column.name === 'photos')) db.exec("ALTER TABLE comments ADD COLUMN photos TEXT NOT NULL DEFAULT '[]'");
@@ -148,7 +156,7 @@ export function openDatabase(directory: string) {
       ) WHERE registered_at IS NULL AND EXISTS (
         SELECT 1 FROM access_codes WHERE user_id = users.id AND claimed_at IS NOT NULL
       );
-      PRAGMA user_version = 7;
+      PRAGMA user_version = 8;
     `);
   });
   return db;
@@ -158,10 +166,14 @@ export type DB = ReturnType<typeof openDatabase>;
 export type Row = Record<string, unknown>;
 export const publicUser = (row: Row): User => ({
   id: Number(row.id), name: String(row.name), role: row.role as User['role'],
+  isAdmin: Boolean(row.is_admin),
   avatarId: row.avatar_id as string | null,
 });
 export function getUsers(db: DB): User[] {
-  return db.prepare('SELECT id, name, role, avatar_id FROM users ORDER BY id').all().map(publicUser);
+  return db.prepare('SELECT id, name, role, is_admin, avatar_id FROM users ORDER BY id').all().map(publicUser);
+}
+export function assignPendingRecipients(db: DB) {
+  db.exec('UPDATE reviews SET recipient_id = (SELECT u.id FROM users u WHERE u.id <> reviews.author_id ORDER BY u.id LIMIT 1) WHERE recipient_id IS NULL');
 }
 export function transaction<T>(db: DB, fn: () => T): T {
   db.exec('BEGIN IMMEDIATE');
@@ -174,7 +186,7 @@ export function getReviews(db: DB, userId: number): Review[] {
   const reactions = db.prepare('SELECT * FROM reactions').all();
   const favorites = new Set(db.prepare('SELECT review_id FROM favorites WHERE user_id = ?').all(userId).map(r => Number(r.review_id)));
   return db.prepare("SELECT * FROM reviews ORDER BY event_date DESC, COALESCE(event_time, '') DESC, id DESC").all().map(r => ({
-    id: Number(r.id), authorId: Number(r.author_id), rating: Number(r.rating),
+    id: Number(r.id), authorId: Number(r.author_id), recipientId: r.recipient_id === null ? null : Number(r.recipient_id), rating: Number(r.rating),
     title: String(r.title), body: String(r.body), eventDate: String(r.event_date),
     eventTime: r.event_time === null ? null : String(r.event_time),
     photoIds: JSON.parse(String(r.photo_ids)), createdAt: String(r.created_at),

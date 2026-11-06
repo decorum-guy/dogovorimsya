@@ -9,8 +9,8 @@ import { lastRatingChange } from '../shared/review-history.js';
 
 function deferred<T>() { let resolve!: (value: T) => void, reject!: (error: unknown) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; }
 const state = (name = 'Первый снимок', id = 1): Bootstrap => ({
-  user: { id, name, role: id === 1 ? 'reviewer' : 'recipient', avatarId: null }, users: [], reviews: [], demo: false,
-  statistics: { startedAt: null, reviewCount: 0, averageRating: null, perfectCount: 0, photoCount: 0, commentCount: 0, revisedRatingCount: 0, raisedRatingCount: 0, favorites: { reviewer: 0, recipient: 0, mutual: 0 }, reactions: [], ratingDistribution: { gold: 0, rose: 0, paper: 0, ember: 0, inferno: 0 } },
+  user: { id, name, role: id === 1 ? 'reviewer' : 'recipient', avatarId: null, isAdmin: id === 1 }, users: [], reviews: [], demo: false,
+  statistics: { participants: [], startedAt: null, reviewCount: 0, averageRating: null, perfectCount: 0, photoCount: 0, commentCount: 0, revisedRatingCount: 0, raisedRatingCount: 0, favorites: { reviewer: 0, recipient: 0, mutual: 0 }, reactions: [], ratingDistribution: { gold: 0, rose: 0, paper: 0, ember: 0, inferno: 0 } },
 });
 function setup(request: (path: string, options?: RequestInit) => Promise<any>) {
   const changes: (Bootstrap | null)[] = [], warnings: string[] = [];
