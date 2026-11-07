@@ -39,7 +39,7 @@
 
 1. Прочитать [docs/status.md](docs/status.md): что развёрнуто, что проверено, какие ограничения остаются.
 2. Прочитать [docs/development.md](docs/development.md): структура, модель данных, API, миграции и тесты.
-3. Для работы на VPS — [docs/deployment.md](docs/deployment.md); для сетевой схемы — [docs/geodns.md](docs/geodns.md) и [docs/edge-proxy.md](docs/edge-proxy.md).
+3. На рабочем Mac владельца уже настроены `ssh ha-vps` и `ssh kz-bot` под codex; агенту разрешены самостоятельный деплой и мониторинг проекта. Порядок и границы — [docs/deployment.md](docs/deployment.md); для сетевой схемы — [docs/geodns.md](docs/geodns.md) и [docs/edge-proxy.md](docs/edge-proxy.md).
 4. Контракты отдельных функций: [взаимные оценки](docs/two-way-ratings.md), [уведомления](docs/notifications.md), [приветствия](docs/home-screen-copy.md).
 5. Инструкции агентам: [AGENTS.md](AGENTS.md) и [CLAUDE.md](CLAUDE.md). Исторический аудит — [6 ноября 2026](docs/audit-2026-11-06.md).
 
