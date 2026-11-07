@@ -6,6 +6,10 @@
 
 Приложение, фотографии, SQLite и TLS остаются на origin; KZ передаёт HTTPS по TCP, как описано в [edge-proxy.md](edge-proxy.md).
 
+## Текущее состояние
+
+Собственное делегирование уже действует: ns1.dogovorimsya.online и ns2.dogovorimsya.online. На проверке 7 ноября оба отвечали serial 2026110602, межсерверная проверка KZ-NS с RU/GB ECS вернула origin/KZ. Службы обоих NS работают. Это не гарантия, что каждый российский браузер получает origin: 7 ноября конкретный Mac с RU HTTP-выходом разрешал домен в KZ и терял большой ответ. Результаты и следующий разбор — [status.md](status.md).
+
 ## Подготовка
 
 [render.py](../deploy/geodns/render.py) создаёт зону и конфиг без Python-зависимостей:
@@ -31,9 +35,9 @@ Native-процесс работает от codex с CAP_NET_BIND_SERVICE. Home 
 Каждый публичный NS проверять с другого VPS по UDP и TCP:
 
 ```sh
-dig @192.0.2.10 couple.example SOA +short
-dig @192.0.2.10 couple.example A +subnet=85.198.104.0/24 +short
-dig @192.0.2.10 couple.example A +tcp +subnet=62.164.142.0/24 +short
+dig @192.0.2.10 couple.example SOA +time=3 +tries=1 +short
+dig @192.0.2.10 couple.example A +subnet=85.198.104.0/24 +time=3 +tries=1 +short
+dig @192.0.2.10 couple.example A +tcp +subnet=62.164.142.0/24 +time=3 +tries=1 +short
 ```
 
 Повторить для второго NS, www и IPv6-подсетей. Сверить SOA/NS, отсутствие неподдерживаемого AAAA, NXDOMAIN отсутствующего имени, REFUSED для чужой зоны и отказ AXFR. Проверить запросы без ECS из RU и KZ.
@@ -44,7 +48,7 @@ dig @192.0.2.10 couple.example A +tcp +subnet=62.164.142.0/24 +short
 
 ## REG.RU
 
-После проверки обоих публичных NS:
+Для действующего домена эти шаги уже выполнены; это процедура первоначального подключения или согласованного восстановления, не текущая задача. После проверки обоих публичных NS:
 
 1. «DNS-серверы и управление зоной» → изменение DNS-серверов → «Свой список DNS-серверов».
 2. ns1.<домен> с IPv4 origin и ns2.<домен> с IPv4 KZ.
