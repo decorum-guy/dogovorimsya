@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { PullGesture, pullThreshold } from '../lib/pull-gesture';
 
-export function PullToRefresh({ enabled, refreshing, onRefresh, children }: {
-  enabled: boolean; refreshing: boolean; onRefresh: () => Promise<void>; children: ReactNode;
+export function PullToRefresh({ enabled, refreshing, onRefresh, scrollContainer, children }: {
+  enabled: boolean; refreshing: boolean; onRefresh: () => Promise<void>; scrollContainer: RefObject<HTMLElement | null>; children: ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null), refresh = useRef(onRefresh), running = useRef(refreshing);
   refresh.current = onRefresh; running.current = refreshing;
@@ -17,7 +17,7 @@ export function PullToRefresh({ enabled, refreshing, onRefresh, children }: {
       gesture.cancel();
       if (running.current || event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable],[data-no-pull-refresh]')) return;
       const point = event.touches[0];
-      if (point) gesture.begin(point.clientX, point.clientY, Math.max(0, window.scrollY), event.touches.length);
+      if (point) gesture.begin(point.clientX, point.clientY, Math.max(0, window.scrollY, scrollContainer.current?.scrollTop || 0), event.touches.length);
     }
     function move(event: TouchEvent) {
       const point = event.touches[0];
@@ -45,7 +45,7 @@ export function PullToRefresh({ enabled, refreshing, onRefresh, children }: {
       element.removeEventListener('touchstart', start); element.removeEventListener('touchmove', move);
       element.removeEventListener('touchend', end); element.removeEventListener('touchcancel', cancel);
     };
-  }, [enabled]);
+  }, [enabled, scrollContainer]);
   const distance = pull.distance, visible = distance > 0;
   return <div ref={root} className={'pull-refresh-root' + (pull.dragging ? ' pulling' : '')}>
     <div className="pull-refresh-indicator" role="status" aria-live="polite" aria-hidden={!visible}
